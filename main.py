@@ -56,10 +56,8 @@ async def receive_whatsapp_event(request: Request):
                 "messaging_product": "whatsapp",
                 "to": sender,
                 "type": "text",
-                "text": {
-                    "body": f"You said: {msg}"
-                }
-            }
+                "text": {"body": f"You said: {msg}"},
+            },
         )
         print("STATUS:", response.status_code)
         print("RESPONSE:", response.text)
