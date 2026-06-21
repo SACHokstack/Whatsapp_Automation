@@ -45,7 +45,7 @@ async def receive_whatsapp_event(request: Request):
 
         print("MESSAGE:", msg)
 
-        requests.post(
+        response = requests.post(
             f"https://graph.facebook.com/v25.0/{PHONE_NUMBER_ID}/messages",
             headers={
                 "Authorization": f"Bearer {ACCESS_TOKEN}",
@@ -60,6 +60,8 @@ async def receive_whatsapp_event(request: Request):
                 }
             }
         )
+        print("STATUS:", response.status_code)
+        print("RESPONSE:", response.text)
     except Exception as e:
         print(e)
 
