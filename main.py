@@ -44,6 +44,10 @@ async def receive_whatsapp_event(request: Request):
     try:
         value = body["entry"][0]["changes"][0]["value"]
         if "messages" not in value:
+            if "statuses" in value:
+                for status in value["statuses"]:
+                    print("STATUS EVENT:", status)
+                return {"status": "status_received"}
             return {"status": "ignored"}
 
         msg = value["messages"][0]["text"]["body"]
