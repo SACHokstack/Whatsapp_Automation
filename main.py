@@ -1,4 +1,5 @@
 import os
+import requests
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -9,6 +10,8 @@ load_dotenv()
 app = FastAPI()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
 
 
 @app.get("/")
@@ -35,16 +38,29 @@ def verify_webhook(
 async def receive_whatsapp_event(request: Request):
     body = await request.json()
 
-    print("Incoming WhatsApp webhook:")
-    print(body)
-
     try:
-        msg = (
-            body["entry"][0]["changes"][0]["value"]
-            ["messages"][0]["text"]["body"]
-        )
+        value = body["entry"][0]["changes"][0]["value"]
+        msg = value["messages"][0]["text"]["body"]
+        sender = value["messages"][0]["from"]
+
         print("MESSAGE:", msg)
-    except (KeyError, IndexError, TypeError):
-        pass
+
+        requests.post(
+            f"https://graph.facebook.com/v25.0/{PHONE_NUMBER_ID}/messages",
+            headers={
+                "Authorization": f"Bearer {ACCESS_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "messaging_product": "whatsapp",
+                "to": sender,
+                "type": "text",
+                "text": {
+                    "body": f"You said: {msg}"
+                }
+            }
+        )
+    except Exception as e:
+        print(e)
 
     return {"status": "received"}
