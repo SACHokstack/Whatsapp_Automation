@@ -38,4 +38,13 @@ async def receive_whatsapp_event(request: Request):
     print("Incoming WhatsApp webhook:")
     print(body)
 
+    try:
+        msg = (
+            body["entry"][0]["changes"][0]["value"]
+            ["messages"][0]["text"]["body"]
+        )
+        print("MESSAGE:", msg)
+    except (KeyError, IndexError, TypeError):
+        pass
+
     return {"status": "received"}
