@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: timmins-whatsapp-webhook
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: VERIFY_TOKEN
+        sync: false

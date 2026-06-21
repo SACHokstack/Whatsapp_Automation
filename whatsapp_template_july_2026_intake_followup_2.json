@@ -1,0 +1,39 @@
+{
+  "name": "july_2026_intake_followup_2",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Hi {{full_name}}, we still have a few places open for the July 2026 SW Testing intake.\n\nReply if you want the schedule or a quick callback.",
+      "example": {
+        "body_text": [
+          [
+            "ali akhtar"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Reply STOP to opt out."
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Yes, send details"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Book a callback"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Not interested"
+        }
+      ]
+    }
+  ]
+}

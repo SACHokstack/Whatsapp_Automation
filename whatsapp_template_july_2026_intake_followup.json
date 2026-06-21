@@ -1,0 +1,39 @@
+{
+  "name": "july_2026_intake_followup",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Hi {{full_name}}, this is Timmins Training Consulting.\n\nThanks for submitting the July 2026 SW Testing intake form.\n\nWould you like us to send the course details and next steps?",
+      "example": {
+        "body_text": [
+          [
+            "ali akhtar"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Reply STOP to opt out."
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Yes, send details"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Book a callback"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Not interested"
+        }
+      ]
+    }
+  ]
+}
