@@ -1,14 +1,15 @@
 import os
-import requests
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
+
+from services.google_sheets import update_lead
+from services.whatsapp import send_text
 
 
 load_dotenv()
 
 app = FastAPI()
-session = requests.Session()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
@@ -52,22 +53,9 @@ async def receive_whatsapp_event(request: Request):
             return {"status": "ignored"}
 
         print("MESSAGE:", msg)
+        update_lead(sender, status="REPLIED", last_reply=msg)
 
-        response = session.post(
-            f"https://graph.facebook.com/v25.0/{PHONE_NUMBER_ID}/messages",
-            headers={
-                "Authorization": f"Bearer {ACCESS_TOKEN}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "messaging_product": "whatsapp",
-                "to": sender,
-                "type": "text",
-                "text": {
-                    "body": f"You said: {msg}"
-                }
-            }
-        )
+        response = send_text(sender, f"You said: {msg}")
         print("STATUS:", response.status_code)
         print("RESPONSE:", response.text)
     except Exception as e:
