@@ -9,11 +9,20 @@ session = requests.Session()
 
 
 def _phone_number_id() -> str:
-    return os.getenv("PHONE_NUMBER_ID") or os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    return (
+        os.getenv("PHONE_NUMBER_ID")
+        or os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+        or os.getenv("META_PHONE_NUMBER_ID", "")
+    )
 
 
 def _access_token() -> str:
-    return os.getenv("WHATSAPP_TOKEN") or os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+    return (
+        os.getenv("ACCESS_TOKEN")
+        or os.getenv("WHATSAPP_TOKEN")
+        or os.getenv("WHATSAPP_ACCESS_TOKEN")
+        or os.getenv("META_ACCESS_TOKEN", "")
+    )
 
 
 def send_text(to: str, body: str) -> requests.Response:
@@ -36,9 +45,22 @@ def send_text(to: str, body: str) -> requests.Response:
     return response
 
 
-def send_template(to: str, template_name: str, language_code: str = "en_US") -> requests.Response:
+def send_template(
+    to: str,
+    template_name: str,
+    language_code: str = "en_US",
+    variables: list[str] | None = None,
+) -> requests.Response:
     phone_number_id = _phone_number_id()
     access_token = _access_token()
+    components = []
+    if variables:
+        components.append(
+            {
+                "type": "body",
+                "parameters": [{"type": "text", "text": value} for value in variables],
+            }
+        )
     response = session.post(
         f"https://graph.facebook.com/v25.0/{phone_number_id}/messages",
         headers={
@@ -52,6 +74,7 @@ def send_template(to: str, template_name: str, language_code: str = "en_US") -> 
             "template": {
                 "name": template_name,
                 "language": {"code": language_code},
+                **({"components": components} if components else {}),
             },
         },
         timeout=30,
