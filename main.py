@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 load_dotenv()
 
 app = FastAPI()
+session = requests.Session()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
@@ -41,12 +42,18 @@ async def receive_whatsapp_event(request: Request):
 
     try:
         value = body["entry"][0]["changes"][0]["value"]
+        if "messages" not in value:
+            return {"status": "ignored"}
+
         msg = value["messages"][0]["text"]["body"]
         sender = value["messages"][0]["from"]
 
+        if sender == PHONE_NUMBER_ID:
+            return {"status": "ignored"}
+
         print("MESSAGE:", msg)
 
-        response = requests.post(
+        response = session.post(
             f"https://graph.facebook.com/v25.0/{PHONE_NUMBER_ID}/messages",
             headers={
                 "Authorization": f"Bearer {ACCESS_TOKEN}",
@@ -64,6 +71,6 @@ async def receive_whatsapp_event(request: Request):
         print("STATUS:", response.status_code)
         print("RESPONSE:", response.text)
     except Exception as e:
-        print(e)
+        print("ERROR:", str(e))
 
     return {"status": "received"}
