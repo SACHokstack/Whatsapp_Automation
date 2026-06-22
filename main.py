@@ -3,10 +3,6 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 
-from services.google_sheets import update_lead
-from services.whatsapp import send_text
-
-
 load_dotenv()
 
 app = FastAPI()
@@ -41,28 +37,18 @@ def verify_webhook(
 async def receive_whatsapp_event(request: Request):
     body = await request.json()
 
+    print("=" * 80)
+    print(body)
+    print("=" * 80)
+
     try:
         value = body["entry"][0]["changes"][0]["value"]
-        if "messages" not in value:
-            if "statuses" in value:
-                for status in value["statuses"]:
-                    print("STATUS EVENT:", status)
-                return {"status": "status_received"}
-            return {"status": "ignored"}
 
-        msg = value["messages"][0]["text"]["body"]
-        sender = value["messages"][0]["from"]
+        if "statuses" in value:
+            print("STATUS EVENT")
+            print(value["statuses"])
 
-        if sender == PHONE_NUMBER_ID:
-            return {"status": "ignored"}
-
-        print("MESSAGE:", msg)
-        update_lead(sender, status="REPLIED", last_reply=msg)
-
-        response = send_text(sender, f"You said: {msg}")
-        print("STATUS:", response.status_code)
-        print("RESPONSE:", response.text)
     except Exception as e:
-        print("ERROR:", str(e))
+        print(e)
 
     return {"status": "received"}
