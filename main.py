@@ -15,6 +15,12 @@ seen_status_events: set[tuple[str, str]] = set()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
+ENABLE_GOOGLE_SHEETS = os.getenv("ENABLE_GOOGLE_SHEETS", "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 print("TOKEN PREFIX:", ACCESS_TOKEN[:20] if ACCESS_TOKEN else "")
 init_db()
 
@@ -31,6 +37,18 @@ def _faq_reply(msg: str) -> str:
     if "schedule" in msg_lower:
         return "Classes start in July."
     return "Thank you for your interest. A consultant will contact you shortly."
+
+
+def _update_sheet_if_enabled(**kwargs) -> bool:
+    if not ENABLE_GOOGLE_SHEETS:
+        print("SHEET SKIPPED: disabled by ENABLE_GOOGLE_SHEETS")
+        return False
+
+    try:
+        return update_lead(**kwargs)
+    except Exception as sheet_error:
+        print("SHEET ERROR:", sheet_error)
+        return False
 
 
 @app.get("/")
@@ -78,15 +96,12 @@ async def receive_whatsapp_event(request: Request):
                     last_reply=msg,
                 )
                 print("LOCAL UPDATED:", local_updated)
-                try:
-                    updated = update_lead(
-                        sender,
-                        status="REPLIED",
-                        last_reply=msg,
-                    )
-                    print("SHEET UPDATED:", updated)
-                except Exception as sheet_error:
-                    print("SHEET ERROR:", sheet_error)
+                updated = _update_sheet_if_enabled(
+                    sender,
+                    status="REPLIED",
+                    last_reply=msg,
+                )
+                print("SHEET UPDATED:", updated)
 
                 reply_text = _faq_reply(msg)
                 response = send_text(sender, reply_text)
@@ -100,16 +115,13 @@ async def receive_whatsapp_event(request: Request):
                     last_reply=msg,
                 )
                 print("LOCAL UPDATED AFTER REPLY:", local_updated)
-                try:
-                    updated = update_lead(
-                        sender,
-                        status="REPLIED",
-                        last_message=reply_text,
-                        last_reply=msg,
-                    )
-                    print("SHEET UPDATED AFTER REPLY:", updated)
-                except Exception as sheet_error:
-                    print("SHEET ERROR AFTER REPLY:", sheet_error)
+                updated = _update_sheet_if_enabled(
+                    sender,
+                    status="REPLIED",
+                    last_message=reply_text,
+                    last_reply=msg,
+                )
+                print("SHEET UPDATED AFTER REPLY:", updated)
 
                 try:
                     reply_id = response.json().get("messages", [{}])[0].get("id")
