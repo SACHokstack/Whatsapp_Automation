@@ -39,13 +39,13 @@ def _faq_reply(msg: str) -> str:
     return "Thank you for your interest. A consultant will contact you shortly."
 
 
-def _update_sheet_if_enabled(**kwargs) -> bool:
+def _update_sheet_if_enabled(phone: str, **kwargs) -> bool:
     if not ENABLE_GOOGLE_SHEETS:
         print("SHEET SKIPPED: disabled by ENABLE_GOOGLE_SHEETS")
         return False
 
     try:
-        return update_lead(**kwargs)
+        return update_lead(phone, **kwargs)
     except Exception as sheet_error:
         print("SHEET ERROR:", sheet_error)
         return False
