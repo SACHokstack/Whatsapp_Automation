@@ -154,12 +154,13 @@ def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | No
     msg_lower = message.lower().strip()
     state = (lead.get("status") or lead.get("qualification_step") or "").strip().upper()
 
+    if "interested" in msg_lower:
+        return _qualification_prompt(), {
+            "status": "ASKING_OCCUPATION",
+            "qualification_step": "ASKING_OCCUPATION",
+        }
+
     if not state:
-        if "interested" in msg_lower:
-            return _qualification_prompt(), {
-                "status": "ASKING_OCCUPATION",
-                "qualification_step": "ASKING_OCCUPATION",
-            }
         return None, None
 
     if state == "ASKING_OCCUPATION":
