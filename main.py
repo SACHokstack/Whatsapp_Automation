@@ -150,13 +150,19 @@ def _extract_availability_days(text: str) -> int | None:
     return _extract_int(text_lower)
 
 
-def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | None, dict[str, str | int] | None]:
+def _process_conversation(message: str, lead: dict[str, str]) -> tuple[str | None, dict[str, str | int] | None]:
     msg_lower = message.lower().strip()
-    state = (lead.get("status") or lead.get("qualification_step") or "").strip().upper()
+    state = (
+        lead.get("conversation_state")
+        or lead.get("qualification_step")
+        or lead.get("status")
+        or ""
+    ).strip().upper()
 
     if "interested" in msg_lower:
         return _qualification_prompt(), {
             "status": "ASKING_OCCUPATION",
+            "conversation_state": "ASKING_OCCUPATION",
             "qualification_step": "ASKING_OCCUPATION",
         }
 
@@ -169,6 +175,7 @@ def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | No
             return "Please reply with 1, 2, or 3.", None
         return _experience_prompt(), {
             "status": "ASKING_EXPERIENCE",
+            "conversation_state": "ASKING_EXPERIENCE",
             "qualification_step": "ASKING_EXPERIENCE",
             "occupation": occupation,
         }
@@ -179,6 +186,7 @@ def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | No
         experience = "Yes" if _is_yes(msg_lower) else "No"
         return _budget_prompt(), {
             "status": "ASKING_BUDGET",
+            "conversation_state": "ASKING_BUDGET",
             "qualification_step": "ASKING_BUDGET",
             "experience": experience,
         }
@@ -189,6 +197,7 @@ def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | No
             return "Please share your budget.", None
         return _availability_prompt(), {
             "status": "ASKING_AVAILABILITY",
+            "conversation_state": "ASKING_AVAILABILITY",
             "qualification_step": "ASKING_AVAILABILITY",
             "budget": budget,
         }
@@ -203,6 +212,7 @@ def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | No
         status = _lead_status_from_score(score)
         return _final_qualification_reply(), {
             "status": status,
+            "conversation_state": "",
             "qualification_step": "",
             "availability": availability,
             "lead_score": score,
@@ -273,25 +283,19 @@ async def receive_whatsapp_event(request: Request):
                 )
                 lead = get_lead(sender) or {}
 
-                reply_text, qualification_updates = _process_qualification(msg, lead)
+                reply_text, state_updates = _process_conversation(msg, lead)
                 if reply_text is None:
                     reply_text = _faq_reply(msg)
-                    qualification_updates = None
+                    state_updates = None
 
-                final_status = (
-                    str(qualification_updates.get("status"))
-                    if qualification_updates and qualification_updates.get("status")
-                    else str(lead.get("status") or "REPLIED")
-                )
+                if state_updates:
+                    local_updated = upsert_lead(sender, **state_updates)
+                    print("LOCAL STATE UPDATED:", local_updated)
+                    updated = _update_sheet_if_enabled(sender, **state_updates)
+                    print("SHEET STATE UPDATED:", updated)
 
-                if qualification_updates:
-                    local_updated = upsert_lead(sender, **qualification_updates)
-                    print("LOCAL QUALIFICATION UPDATED:", local_updated)
-                    updated = _update_sheet_if_enabled(sender, **qualification_updates)
-                    print("SHEET QUALIFICATION UPDATED:", updated)
-
-                    if str(qualification_updates.get("status") or "") == "HOT":
-                        hot_summary = _hot_lead_summary(sender, lead, qualification_updates)
+                    if str(state_updates.get("status") or "") == "HOT":
+                        hot_summary = _hot_lead_summary(sender, lead, state_updates)
                         if RAJ_PHONE:
                             raj_response = send_text(RAJ_PHONE, hot_summary)
                             print("RAJ NOTIFY STATUS:", raj_response.status_code)
@@ -309,19 +313,9 @@ async def receive_whatsapp_event(request: Request):
                 print("AUTO REPLY STATUS:", response.status_code)
                 print("AUTO REPLY RESPONSE:", response.text)
 
-                local_updated = upsert_lead(
-                    sender,
-                    status=final_status,
-                    last_message=reply_text,
-                    last_reply=msg,
-                )
+                local_updated = upsert_lead(sender, last_message=reply_text, last_reply=msg)
                 print("LOCAL UPDATED AFTER REPLY:", local_updated)
-                updated = _update_sheet_if_enabled(
-                    sender,
-                    status=final_status,
-                    last_message=reply_text,
-                    last_reply=msg,
-                )
+                updated = _update_sheet_if_enabled(sender, last_message=reply_text, last_reply=msg)
                 print("SHEET UPDATED AFTER REPLY:", updated)
 
                 try:

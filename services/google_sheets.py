@@ -83,6 +83,7 @@ def update_lead(
     phone: str,
     *,
     status: str | None = None,
+    conversation_state: str | None = None,
     qualification_step: str | None = None,
     last_message: str | None = None,
     last_reply: str | None = None,
@@ -101,6 +102,8 @@ def update_lead(
     updates: list[tuple[str, str]] = []
     if status is not None:
         updates.append(("status", status))
+    if conversation_state is not None:
+        updates.append(("conversation_state", conversation_state))
     if qualification_step is not None:
         updates.append(("qualification_step", qualification_step))
     if last_message is not None:
