@@ -83,9 +83,15 @@ def update_lead(
     phone: str,
     *,
     status: str | None = None,
+    qualification_step: str | None = None,
     last_message: str | None = None,
     last_reply: str | None = None,
     assigned_to: str | None = None,
+    occupation: str | None = None,
+    experience: str | None = None,
+    budget: str | None = None,
+    availability: str | None = None,
+    lead_score: int | None = None,
 ) -> bool:
     sheet = get_sheet()
     row = find_row_by_phone(phone)
@@ -95,12 +101,24 @@ def update_lead(
     updates: list[tuple[str, str]] = []
     if status is not None:
         updates.append(("status", status))
+    if qualification_step is not None:
+        updates.append(("qualification_step", qualification_step))
     if last_message is not None:
         updates.append(("last_message", last_message))
     if last_reply is not None:
         updates.append(("last_reply", last_reply))
     if assigned_to is not None:
         updates.append(("assigned_to", assigned_to))
+    if occupation is not None:
+        updates.append(("occupation", occupation))
+    if experience is not None:
+        updates.append(("experience", experience))
+    if budget is not None:
+        updates.append(("budget", budget))
+    if availability is not None:
+        updates.append(("availability", availability))
+    if lead_score is not None:
+        updates.append(("lead_score", str(lead_score)))
 
     headers = sheet.row_values(1)
     for column_name, value in updates:
