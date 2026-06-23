@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 
 from services.google_sheets import update_lead
+from services.whatsapp import send_text
 from services.sqlite_store import add_message, init_db, upsert_lead
 
 load_dotenv()
@@ -16,6 +17,18 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
 print("TOKEN PREFIX:", ACCESS_TOKEN[:20] if ACCESS_TOKEN else "")
 init_db()
+
+
+def _faq_reply(msg: str) -> str:
+    msg_lower = msg.lower()
+
+    if "fee" in msg_lower:
+        return "The course fee is RM XXXX. Would you like the full brochure?"
+    if "duration" in msg_lower:
+        return "The program runs for X weeks."
+    if "schedule" in msg_lower:
+        return "Classes start in July."
+    return "Thank you for your interest. A consultant will contact you shortly."
 
 
 @app.get("/")
@@ -69,6 +82,38 @@ async def receive_whatsapp_event(request: Request):
                 )
                 print("LOCAL UPDATED:", local_updated)
                 print("SHEET UPDATED:", updated)
+
+                reply_text = _faq_reply(msg)
+                response = send_text(sender, reply_text)
+                print("AUTO REPLY STATUS:", response.status_code)
+                print("AUTO REPLY RESPONSE:", response.text)
+
+                local_updated = upsert_lead(
+                    sender,
+                    status="REPLIED",
+                    last_message=reply_text,
+                    last_reply=msg,
+                )
+                updated = update_lead(
+                    sender,
+                    status="REPLIED",
+                    last_message=reply_text,
+                    last_reply=msg,
+                )
+                print("LOCAL UPDATED AFTER REPLY:", local_updated)
+                print("SHEET UPDATED AFTER REPLY:", updated)
+
+                try:
+                    reply_id = response.json().get("messages", [{}])[0].get("id")
+                except Exception:
+                    reply_id = None
+
+                add_message(
+                    sender,
+                    direction="outbound",
+                    body=reply_text,
+                    message_id=reply_id,
+                )
 
         if "statuses" in value:
             for status in value["statuses"]:
