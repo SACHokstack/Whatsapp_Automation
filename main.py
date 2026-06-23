@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 load_dotenv()
 
 app = FastAPI()
+seen_status_events: set[tuple[str, str]] = set()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
@@ -37,16 +38,28 @@ def verify_webhook(
 async def receive_whatsapp_event(request: Request):
     body = await request.json()
 
-    print("=" * 80)
-    print(body)
-    print("=" * 80)
-
     try:
         value = body["entry"][0]["changes"][0]["value"]
 
         if "statuses" in value:
-            print("STATUS EVENT")
-            print(value["statuses"])
+            for status in value["statuses"]:
+                status_id = status.get("id", "")
+                status_name = status.get("status", "")
+                key = (status_id, status_name)
+
+                if key in seen_status_events:
+                    continue
+
+                seen_status_events.add(key)
+                print(
+                    "STATUS:",
+                    status_id,
+                    status_name,
+                    "recipient=",
+                    status.get("recipient_id", ""),
+                    "timestamp=",
+                    status.get("timestamp", ""),
+                )
 
     except Exception as e:
         print(e)
