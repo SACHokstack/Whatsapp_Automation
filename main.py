@@ -3,6 +3,8 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 
+from services.google_sheets import update_lead
+
 load_dotenv()
 
 app = FastAPI()
@@ -40,6 +42,19 @@ async def receive_whatsapp_event(request: Request):
 
     try:
         value = body["entry"][0]["changes"][0]["value"]
+
+        if "messages" in value:
+            msg = value["messages"][0].get("text", {}).get("body", "")
+            sender = value["messages"][0].get("from", "")
+
+            if msg and sender:
+                print("MESSAGE:", msg)
+                updated = update_lead(
+                    sender,
+                    status="REPLIED",
+                    last_reply=msg,
+                )
+                print("LEAD UPDATED:", updated)
 
         if "statuses" in value:
             for status in value["statuses"]:
