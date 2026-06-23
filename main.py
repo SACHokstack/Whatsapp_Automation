@@ -77,13 +77,16 @@ async def receive_whatsapp_event(request: Request):
                     status="REPLIED",
                     last_reply=msg,
                 )
-                updated = update_lead(
-                    sender,
-                    status="REPLIED",
-                    last_reply=msg,
-                )
                 print("LOCAL UPDATED:", local_updated)
-                print("SHEET UPDATED:", updated)
+                try:
+                    updated = update_lead(
+                        sender,
+                        status="REPLIED",
+                        last_reply=msg,
+                    )
+                    print("SHEET UPDATED:", updated)
+                except Exception as sheet_error:
+                    print("SHEET ERROR:", sheet_error)
 
                 reply_text = _faq_reply(msg)
                 response = send_text(sender, reply_text)
@@ -96,14 +99,17 @@ async def receive_whatsapp_event(request: Request):
                     last_message=reply_text,
                     last_reply=msg,
                 )
-                updated = update_lead(
-                    sender,
-                    status="REPLIED",
-                    last_message=reply_text,
-                    last_reply=msg,
-                )
                 print("LOCAL UPDATED AFTER REPLY:", local_updated)
-                print("SHEET UPDATED AFTER REPLY:", updated)
+                try:
+                    updated = update_lead(
+                        sender,
+                        status="REPLIED",
+                        last_message=reply_text,
+                        last_reply=msg,
+                    )
+                    print("SHEET UPDATED AFTER REPLY:", updated)
+                except Exception as sheet_error:
+                    print("SHEET ERROR AFTER REPLY:", sheet_error)
 
                 try:
                     reply_id = response.json().get("messages", [{}])[0].get("id")
