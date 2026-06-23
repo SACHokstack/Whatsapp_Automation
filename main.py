@@ -242,6 +242,30 @@ def _hot_lead_summary(sender: str, lead: dict[str, str], updates: dict[str, str 
     )
 
 
+def _human_escalation_reason(msg_lower: str) -> str | None:
+    triggers = {
+        "discount": "Requested discount",
+        "special pricing": "Requested special pricing",
+        "group booking": "Requested group booking",
+        "trainer discussion": "Requested trainer discussion",
+        "in-house training": "Requested in-house training",
+    }
+    for keyword, reason in triggers.items():
+        if keyword in msg_lower:
+            return reason
+    return None
+
+
+def _human_handoff_summary(sender: str, lead: dict[str, str], reason: str) -> str:
+    name = (lead.get("name") or "").strip() or "Unknown"
+    return (
+        "🚨 Human Attention Required\n\n"
+        f"Lead: {name}\n"
+        f"Phone: {sender}\n\n"
+        f"Reason:\n{reason}"
+    )
+
+
 @app.get("/")
 def home():
     return {
@@ -282,6 +306,51 @@ async def receive_whatsapp_event(request: Request):
                     message_id=value["messages"][0].get("id"),
                 )
                 lead = get_lead(sender) or {}
+
+                human_reason = _human_escalation_reason(msg.lower())
+                if human_reason:
+                    local_updated = upsert_lead(
+                        sender,
+                        status="NEEDS_HUMAN",
+                        conversation_state="NEEDS_HUMAN",
+                        assigned_to="Raj",
+                    )
+                    print("LOCAL HUMAN ESCALATION UPDATED:", local_updated)
+                    updated = _update_sheet_if_enabled(
+                        sender,
+                        status="NEEDS_HUMAN",
+                        conversation_state="NEEDS_HUMAN",
+                        assigned_to="Raj",
+                    )
+                    print("SHEET HUMAN ESCALATION UPDATED:", updated)
+
+                    human_summary = _human_handoff_summary(sender, lead, human_reason)
+                    if RAJ_PHONE:
+                        raj_response = send_text(RAJ_PHONE, human_summary)
+                        print("RAJ HUMAN ALERT STATUS:", raj_response.status_code)
+                        print("RAJ HUMAN ALERT RESPONSE:", raj_response.text)
+                        add_message(
+                            RAJ_PHONE,
+                            direction="outbound",
+                            body=human_summary,
+                            message_id=None,
+                        )
+                    else:
+                        print("RAJ HUMAN ALERT SKIPPED: RAJ_PHONE not set")
+
+                    customer_reply = (
+                        "Thanks. A consultant will contact you shortly regarding that request."
+                    )
+                    response = send_text(sender, customer_reply)
+                    print("AUTO REPLY STATUS:", response.status_code)
+                    print("AUTO REPLY RESPONSE:", response.text)
+                    add_message(
+                        sender,
+                        direction="outbound",
+                        body=customer_reply,
+                        message_id=None,
+                    )
+                    return {"status": "received"}
 
                 reply_text, state_updates = _process_conversation(msg, lead)
                 if reply_text is None:
