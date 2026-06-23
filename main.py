@@ -22,6 +22,8 @@ init_db()
 def _faq_reply(msg: str) -> str:
     msg_lower = msg.lower()
 
+    if msg_lower in {"hi", "hello", "hey"}:
+        return "Hi, this is Timmins Training. How can we help you today?"
     if "fee" in msg_lower:
         return "The course fee is RM XXXX. Would you like the full brochure?"
     if "duration" in msg_lower:
