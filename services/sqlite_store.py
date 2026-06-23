@@ -49,6 +49,10 @@ def init_db() -> None:
                 qualification_step TEXT,
                 last_intent TEXT,
                 last_intent_reason TEXT,
+                needs_human TEXT,
+                human_reason TEXT,
+                human_status TEXT,
+                human_updated_at TEXT,
                 last_message TEXT,
                 last_reply TEXT,
                 assigned_to TEXT,
@@ -70,6 +74,10 @@ def init_db() -> None:
             ("ALTER TABLE leads ADD COLUMN qualification_step TEXT", "qualification_step"),
             ("ALTER TABLE leads ADD COLUMN last_intent TEXT", "last_intent"),
             ("ALTER TABLE leads ADD COLUMN last_intent_reason TEXT", "last_intent_reason"),
+            ("ALTER TABLE leads ADD COLUMN needs_human TEXT", "needs_human"),
+            ("ALTER TABLE leads ADD COLUMN human_reason TEXT", "human_reason"),
+            ("ALTER TABLE leads ADD COLUMN human_status TEXT", "human_status"),
+            ("ALTER TABLE leads ADD COLUMN human_updated_at TEXT", "human_updated_at"),
             ("ALTER TABLE leads ADD COLUMN occupation TEXT", "occupation"),
             ("ALTER TABLE leads ADD COLUMN experience TEXT", "experience"),
             ("ALTER TABLE leads ADD COLUMN budget TEXT", "budget"),
@@ -100,6 +108,10 @@ def upsert_lead(
     qualification_step: str | None = None,
     last_intent: str | None = None,
     last_intent_reason: str | None = None,
+    needs_human: str | None = None,
+    human_reason: str | None = None,
+    human_status: str | None = None,
+    human_updated_at: str | None = None,
     last_message: str | None = None,
     last_reply: str | None = None,
     assigned_to: str | None = None,
@@ -121,9 +133,10 @@ def upsert_lead(
             """
             INSERT INTO leads (
                 phone, name, course, status, conversation_state, qualification_step, last_intent, last_intent_reason,
-                last_message, last_reply, assigned_to, occupation, experience, budget, availability, lead_score, updated_at
+                needs_human, human_reason, human_status, human_updated_at, last_message, last_reply, assigned_to,
+                occupation, experience, budget, availability, lead_score, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(phone) DO UPDATE SET
                 name = COALESCE(excluded.name, leads.name),
                 course = COALESCE(excluded.course, leads.course),
@@ -132,6 +145,10 @@ def upsert_lead(
                 qualification_step = COALESCE(excluded.qualification_step, leads.qualification_step),
                 last_intent = COALESCE(excluded.last_intent, leads.last_intent),
                 last_intent_reason = COALESCE(excluded.last_intent_reason, leads.last_intent_reason),
+                needs_human = COALESCE(excluded.needs_human, leads.needs_human),
+                human_reason = COALESCE(excluded.human_reason, leads.human_reason),
+                human_status = COALESCE(excluded.human_status, leads.human_status),
+                human_updated_at = COALESCE(excluded.human_updated_at, leads.human_updated_at),
                 last_message = COALESCE(excluded.last_message, leads.last_message),
                 last_reply = COALESCE(excluded.last_reply, leads.last_reply),
                 assigned_to = COALESCE(excluded.assigned_to, leads.assigned_to),
@@ -151,6 +168,10 @@ def upsert_lead(
                 qualification_step,
                 last_intent,
                 last_intent_reason,
+                needs_human,
+                human_reason,
+                human_status,
+                human_updated_at,
                 last_message,
                 last_reply,
                 assigned_to,

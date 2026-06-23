@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from datetime import datetime, timezone
 
 import requests
 
@@ -19,7 +20,6 @@ seen_status_events: set[tuple[str, str]] = set()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
-RAJ_PHONE = os.getenv("RAJ_PHONE", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 ENABLE_AI_INTENT_CLASSIFIER = os.getenv("ENABLE_AI_INTENT_CLASSIFIER", "").lower() in {
@@ -172,6 +172,10 @@ def _update_sheet_if_enabled(phone: str, **kwargs) -> bool:
         return False
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _is_yes(msg_lower: str) -> bool:
     return msg_lower in {"yes", "y", "yeah", "yep", "sure", "ok", "okay"}
 
@@ -261,6 +265,21 @@ def _extract_availability_days(text: str) -> int | None:
     return _extract_int(text_lower)
 
 
+def _is_active_qualification_state(lead: dict[str, str]) -> bool:
+    state = (
+        lead.get("conversation_state")
+        or lead.get("qualification_step")
+        or lead.get("status")
+        or ""
+    ).strip().upper()
+    return state in {
+        "ASKING_OCCUPATION",
+        "ASKING_EXPERIENCE",
+        "ASKING_BUDGET",
+        "ASKING_AVAILABILITY",
+    }
+
+
 def _process_conversation(message: str, lead: dict[str, str]) -> tuple[str | None, dict[str, str | int] | None]:
     msg_lower = message.lower().strip()
     state = (
@@ -332,6 +351,33 @@ def _process_conversation(message: str, lead: dict[str, str]) -> tuple[str | Non
     return None, None
 
 
+def _queue_human_handoff(
+    sender: str,
+    lead: dict[str, str],
+    *,
+    reason: str,
+    source: str,
+    intent: str = "",
+) -> None:
+    queue_updates = {
+        "status": "NEEDS_HUMAN",
+        "conversation_state": "NEEDS_HUMAN",
+        "assigned_to": "Raj",
+        "needs_human": "YES",
+        "human_reason": reason,
+        "human_status": "OPEN",
+        "human_updated_at": _utc_now(),
+    }
+    if intent:
+        queue_updates["last_intent"] = intent
+    queue_updates["last_intent_reason"] = reason
+
+    local_updated = upsert_lead(sender, **queue_updates)
+    print(f"LOCAL HUMAN QUEUE UPDATED ({source}):", local_updated)
+    updated = _update_sheet_if_enabled(sender, **queue_updates)
+    print(f"SHEET HUMAN QUEUE UPDATED ({source}):", updated)
+
+
 def _hot_lead_summary(sender: str, lead: dict[str, str], updates: dict[str, str | int]) -> str:
     name = (lead.get("name") or "").strip() or "Unknown"
     occupation = str(updates.get("occupation") or lead.get("occupation") or "")
@@ -365,16 +411,6 @@ def _human_escalation_reason(msg_lower: str) -> str | None:
         if keyword in msg_lower:
             return reason
     return None
-
-
-def _human_handoff_summary(sender: str, lead: dict[str, str], reason: str) -> str:
-    name = (lead.get("name") or "").strip() or "Unknown"
-    return (
-        "🚨 Human Attention Required\n\n"
-        f"Lead: {name}\n"
-        f"Phone: {sender}\n\n"
-        f"Reason:\n{reason}"
-    )
 
 
 @app.get("/")
@@ -420,34 +456,7 @@ async def receive_whatsapp_event(request: Request):
 
                 human_reason = _human_escalation_reason(msg.lower())
                 if human_reason:
-                    local_updated = upsert_lead(
-                        sender,
-                        status="NEEDS_HUMAN",
-                        conversation_state="NEEDS_HUMAN",
-                        assigned_to="Raj",
-                    )
-                    print("LOCAL HUMAN ESCALATION UPDATED:", local_updated)
-                    updated = _update_sheet_if_enabled(
-                        sender,
-                        status="NEEDS_HUMAN",
-                        conversation_state="NEEDS_HUMAN",
-                        assigned_to="Raj",
-                    )
-                    print("SHEET HUMAN ESCALATION UPDATED:", updated)
-
-                    human_summary = _human_handoff_summary(sender, lead, human_reason)
-                    if RAJ_PHONE:
-                        raj_response = send_text(RAJ_PHONE, human_summary)
-                        print("RAJ HUMAN ALERT STATUS:", raj_response.status_code)
-                        print("RAJ HUMAN ALERT RESPONSE:", raj_response.text)
-                        add_message(
-                            RAJ_PHONE,
-                            direction="outbound",
-                            body=human_summary,
-                            message_id=None,
-                        )
-                    else:
-                        print("RAJ HUMAN ALERT SKIPPED: RAJ_PHONE not set")
+                    _queue_human_handoff(sender, lead, reason=human_reason, source="keyword")
 
                     customer_reply = (
                         "Thanks. A consultant will contact you shortly regarding that request."
@@ -463,43 +472,20 @@ async def receive_whatsapp_event(request: Request):
                     )
                     return {"status": "received"}
 
-                ai_result = _classify_intent_with_gemini(msg)
+                ai_result = {"intent": "GENERAL", "needs_human": False, "reason": ""}
+                if not _is_active_qualification_state(lead):
+                    ai_result = _classify_intent_with_gemini(msg)
                 print("AI INTENT:", ai_result)
 
                 if ai_result.get("needs_human"):
                     reason = str(ai_result.get("reason") or "Intent requires human follow-up")
-                    local_updated = upsert_lead(
+                    _queue_human_handoff(
                         sender,
-                        status="NEEDS_HUMAN",
-                        conversation_state="NEEDS_HUMAN",
-                        assigned_to="Raj",
-                        last_intent=str(ai_result.get("intent") or "GENERAL"),
-                        last_intent_reason=reason,
+                        lead,
+                        reason=reason,
+                        source="ai",
+                        intent=str(ai_result.get("intent") or "GENERAL"),
                     )
-                    print("LOCAL AI ESCALATION UPDATED:", local_updated)
-                    updated = _update_sheet_if_enabled(
-                        sender,
-                        status="NEEDS_HUMAN",
-                        conversation_state="NEEDS_HUMAN",
-                        assigned_to="Raj",
-                        last_intent=str(ai_result.get("intent") or "GENERAL"),
-                        last_intent_reason=reason,
-                    )
-                    print("SHEET AI ESCALATION UPDATED:", updated)
-
-                    human_summary = _human_handoff_summary(sender, lead, reason)
-                    if RAJ_PHONE:
-                        raj_response = send_text(RAJ_PHONE, human_summary)
-                        print("RAJ AI ALERT STATUS:", raj_response.status_code)
-                        print("RAJ AI ALERT RESPONSE:", raj_response.text)
-                        add_message(
-                            RAJ_PHONE,
-                            direction="outbound",
-                            body=human_summary,
-                            message_id=None,
-                        )
-                    else:
-                        print("RAJ AI ALERT SKIPPED: RAJ_PHONE not set")
 
                     customer_reply = (
                         "Thanks. A consultant will contact you shortly regarding that request."
@@ -531,18 +517,14 @@ async def receive_whatsapp_event(request: Request):
 
                     if str(state_updates.get("status") or "") == "HOT":
                         hot_summary = _hot_lead_summary(sender, lead, state_updates)
-                        if RAJ_PHONE:
-                            raj_response = send_text(RAJ_PHONE, hot_summary)
-                            print("RAJ NOTIFY STATUS:", raj_response.status_code)
-                            print("RAJ NOTIFY RESPONSE:", raj_response.text)
-                            add_message(
-                                RAJ_PHONE,
-                                direction="outbound",
-                                body=hot_summary,
-                                message_id=None,
-                            )
-                        else:
-                            print("RAJ NOTIFY SKIPPED: RAJ_PHONE not set")
+                        _queue_human_handoff(
+                            sender,
+                            lead,
+                            reason=f"HOT lead score {state_updates.get('lead_score')}",
+                            source="hot_lead",
+                            intent="HOT_LEAD",
+                        )
+                        print("HOT LEAD QUEUED:", hot_summary)
 
                 response = send_text(sender, reply_text)
                 print("AUTO REPLY STATUS:", response.status_code)
