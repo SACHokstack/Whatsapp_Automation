@@ -1,4 +1,5 @@
 import os
+import re
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -29,14 +30,22 @@ init_db()
 def _faq_reply(msg: str) -> str:
     msg_lower = msg.lower()
 
+    faq_kb = {
+        "fees": "The course fee is RM XXXX. Would you like the full brochure?",
+        "fee": "The course fee is RM XXXX. Would you like the full brochure?",
+        "duration": "The program runs for X weeks.",
+        "placement": "We can share placement support details after a quick qualification.",
+        "schedule": "Classes start in July.",
+        "requirements": "The main requirement is interest in software testing and commitment to attend.",
+    }
+
     if msg_lower in {"hi", "hello", "hey"}:
         return "Hi, this is Timmins Training. How can we help you today?"
-    if "fee" in msg_lower:
-        return "The course fee is RM XXXX. Would you like the full brochure?"
-    if "duration" in msg_lower:
-        return "The program runs for X weeks."
-    if "schedule" in msg_lower:
-        return "Classes start in July."
+
+    for keyword, reply in faq_kb.items():
+        if keyword in msg_lower:
+            return reply
+
     return "Thank you for your interest. A consultant will contact you shortly."
 
 
@@ -62,29 +71,31 @@ def _is_no(msg_lower: str) -> bool:
 
 def _lead_score(data: dict[str, str]) -> int:
     score = 0
+    occupation = (data.get("occupation") or "").strip().lower()
     experience = (data.get("experience") or "").strip().lower()
     budget = (data.get("budget") or "").strip().lower()
     availability = (data.get("availability") or "").strip().lower()
 
+    if occupation == "graduate":
+        score += 3
+
     if experience == "yes":
-        score += 3
+        score += 2
 
-    if availability in {"immediately", "now", "today", "asap"} or "immediate" in availability:
-        score += 3
-
-    if (
-        budget == "yes"
-        or budget in {"ok", "okay", "sure", "yes"}
-        or any(ch.isdigit() for ch in budget)
-    ):
+    budget_value = _extract_int(budget)
+    if budget_value is not None and budget_value >= 4000:
         score += 4
+
+    availability_days = _extract_availability_days(availability)
+    if availability_days is not None and availability_days <= 30:
+        score += 2
     return score
 
 
 def _lead_status_from_score(score: int) -> str:
-    if score >= 7:
+    if score >= 8:
         return "HOT"
-    if score >= 4:
+    if score >= 5:
         return "WARM"
     return "COLD"
 
@@ -98,11 +109,11 @@ def _experience_prompt() -> str:
 
 
 def _budget_prompt() -> str:
-    return "What is your budget for the course? Reply with an amount or Yes if your budget is ready."
+    return "What is your budget for the course? Reply with an amount like RM4000."
 
 
 def _availability_prompt() -> str:
-    return "When are you available to start? Reply with your timeframe."
+    return "When are you available to start? Reply with days, for example 14 days or immediately."
 
 
 def _final_qualification_reply() -> str:
@@ -120,55 +131,72 @@ def _parse_occupation(msg: str) -> str | None:
     return None
 
 
+def _extract_int(text: str) -> int | None:
+    match = re.search(r"(\d+)", text or "")
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _extract_availability_days(text: str) -> int | None:
+    text_lower = (text or "").strip().lower()
+    if not text_lower:
+        return None
+    if text_lower in {"immediately", "now", "today", "asap"} or "immediate" in text_lower:
+        return 0
+    return _extract_int(text_lower)
+
+
 def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | None, dict[str, str | int] | None]:
     msg_lower = message.lower().strip()
-    step = (lead.get("qualification_step") or "").strip().lower()
+    state = (lead.get("status") or lead.get("qualification_step") or "").strip().upper()
 
-    if not step:
+    if not state:
         if "interested" in msg_lower:
             return _qualification_prompt(), {
-                "status": "QUALIFYING",
-                "qualification_step": "occupation",
+                "status": "ASKING_OCCUPATION",
+                "qualification_step": "ASKING_OCCUPATION",
             }
         return None, None
 
-    if step == "occupation":
+    if state == "ASKING_OCCUPATION":
         occupation = _parse_occupation(message)
         if not occupation:
             return "Please reply with 1, 2, or 3.", None
         return _experience_prompt(), {
-            "status": "QUALIFYING",
-            "qualification_step": "experience",
+            "status": "ASKING_EXPERIENCE",
+            "qualification_step": "ASKING_EXPERIENCE",
             "occupation": occupation,
         }
 
-    if step == "experience":
+    if state == "ASKING_EXPERIENCE":
         if not (_is_yes(msg_lower) or _is_no(msg_lower)):
             return "Please reply Yes or No.", None
         experience = "Yes" if _is_yes(msg_lower) else "No"
         return _budget_prompt(), {
-            "status": "QUALIFYING",
-            "qualification_step": "budget",
+            "status": "ASKING_BUDGET",
+            "qualification_step": "ASKING_BUDGET",
             "experience": experience,
         }
 
-    if step == "budget":
+    if state == "ASKING_BUDGET":
         budget = message.strip()
         if not budget:
             return "Please share your budget.", None
         return _availability_prompt(), {
-            "status": "QUALIFYING",
-            "qualification_step": "availability",
+            "status": "ASKING_AVAILABILITY",
+            "qualification_step": "ASKING_AVAILABILITY",
             "budget": budget,
         }
 
-    if step == "availability":
+    if state == "ASKING_AVAILABILITY":
         availability = message.strip()
         if not availability:
             return "Please share your availability.", None
         lead_after = dict(lead)
-        lead_after["experience"] = lead.get("experience", "")
-        lead_after["budget"] = lead.get("budget", "")
         lead_after["availability"] = availability
         score = _lead_score(lead_after)
         status = _lead_status_from_score(score)
@@ -180,6 +208,27 @@ def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | No
         }
 
     return None, None
+
+
+def _hot_lead_summary(sender: str, lead: dict[str, str], updates: dict[str, str | int]) -> str:
+    name = (lead.get("name") or "").strip() or "Unknown"
+    occupation = str(updates.get("occupation") or lead.get("occupation") or "")
+    experience = str(updates.get("experience") or lead.get("experience") or "")
+    budget = str(updates.get("budget") or lead.get("budget") or "")
+    availability = str(updates.get("availability") or lead.get("availability") or "")
+    score = str(updates.get("lead_score") or lead.get("lead_score") or "")
+
+    return (
+        "🔥 HOT LEAD\n\n"
+        f"Name: {name}\n"
+        f"Phone: {sender}\n"
+        f"Occupation: {occupation}\n"
+        f"Experience: {experience}\n"
+        f"Budget: RM {budget}\n"
+        f"Availability: {availability}\n\n"
+        "Recommendation: Call within 24 hours.\n"
+        f"Score: {score}"
+    )
 
 
 @app.get("/")
@@ -222,18 +271,6 @@ async def receive_whatsapp_event(request: Request):
                     message_id=value["messages"][0].get("id"),
                 )
                 lead = get_lead(sender) or {}
-                local_updated = upsert_lead(
-                    sender,
-                    status="REPLIED",
-                    last_reply=msg,
-                )
-                print("LOCAL UPDATED:", local_updated)
-                updated = _update_sheet_if_enabled(
-                    sender,
-                    status="REPLIED",
-                    last_reply=msg,
-                )
-                print("SHEET UPDATED:", updated)
 
                 reply_text, qualification_updates = _process_qualification(msg, lead)
                 if reply_text is None:
@@ -252,17 +289,8 @@ async def receive_whatsapp_event(request: Request):
                     updated = _update_sheet_if_enabled(sender, **qualification_updates)
                     print("SHEET QUALIFICATION UPDATED:", updated)
 
-                    qualification_status = str(qualification_updates.get("status") or "")
-                    if qualification_status == "HOT":
-                        hot_summary = (
-                            "🔥 HOT LEAD\n\n"
-                            f"Phone: {sender}\n"
-                            f"Occupation: {qualification_updates.get('occupation') or lead.get('occupation', '')}\n"
-                            f"Experience: {qualification_updates.get('experience') or lead.get('experience', '')}\n"
-                            f"Budget: {qualification_updates.get('budget') or lead.get('budget', '')}\n"
-                            f"Availability: {qualification_updates.get('availability') or lead.get('availability', '')}\n"
-                            f"Score: {qualification_updates.get('lead_score') or ''}"
-                        )
+                    if str(qualification_updates.get("status") or "") == "HOT":
+                        hot_summary = _hot_lead_summary(sender, lead, qualification_updates)
                         if RAJ_PHONE:
                             raj_response = send_text(RAJ_PHONE, hot_summary)
                             print("RAJ NOTIFY STATUS:", raj_response.status_code)
