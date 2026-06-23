@@ -15,6 +15,7 @@ seen_status_events: set[tuple[str, str]] = set()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
+RAJ_PHONE = os.getenv("RAJ_PHONE", "").strip()
 ENABLE_GOOGLE_SHEETS = os.getenv("ENABLE_GOOGLE_SHEETS", "").lower() in {
     "1",
     "true",
@@ -61,15 +62,31 @@ def _is_no(msg_lower: str) -> bool:
 
 def _lead_score(data: dict[str, str]) -> int:
     score = 0
-    if data.get("occupation"):
-        score += 25
-    if data.get("experience"):
-        score += 25
-    if data.get("budget"):
-        score += 25
-    if data.get("availability"):
-        score += 25
+    experience = (data.get("experience") or "").strip().lower()
+    budget = (data.get("budget") or "").strip().lower()
+    availability = (data.get("availability") or "").strip().lower()
+
+    if experience == "yes":
+        score += 3
+
+    if availability in {"immediately", "now", "today", "asap"} or "immediate" in availability:
+        score += 3
+
+    if (
+        budget == "yes"
+        or budget in {"ok", "okay", "sure", "yes"}
+        or any(ch.isdigit() for ch in budget)
+    ):
+        score += 4
     return score
+
+
+def _lead_status_from_score(score: int) -> str:
+    if score >= 7:
+        return "HOT"
+    if score >= 4:
+        return "WARM"
+    return "COLD"
 
 
 def _qualification_prompt() -> str:
@@ -81,7 +98,7 @@ def _experience_prompt() -> str:
 
 
 def _budget_prompt() -> str:
-    return "What is your budget for the course?"
+    return "What is your budget for the course? Reply with an amount or Yes if your budget is ready."
 
 
 def _availability_prompt() -> str:
@@ -150,12 +167,16 @@ def _process_qualification(message: str, lead: dict[str, str]) -> tuple[str | No
         if not availability:
             return "Please share your availability.", None
         lead_after = dict(lead)
+        lead_after["experience"] = lead.get("experience", "")
+        lead_after["budget"] = lead.get("budget", "")
         lead_after["availability"] = availability
+        score = _lead_score(lead_after)
+        status = _lead_status_from_score(score)
         return _final_qualification_reply(), {
-            "status": "QUALIFIED",
+            "status": status,
             "qualification_step": "",
             "availability": availability,
-            "lead_score": _lead_score(lead_after),
+            "lead_score": score,
         }
 
     return None, None
@@ -230,6 +251,30 @@ async def receive_whatsapp_event(request: Request):
                     print("LOCAL QUALIFICATION UPDATED:", local_updated)
                     updated = _update_sheet_if_enabled(sender, **qualification_updates)
                     print("SHEET QUALIFICATION UPDATED:", updated)
+
+                    qualification_status = str(qualification_updates.get("status") or "")
+                    if qualification_status == "HOT":
+                        hot_summary = (
+                            "🔥 HOT LEAD\n\n"
+                            f"Phone: {sender}\n"
+                            f"Occupation: {qualification_updates.get('occupation') or lead.get('occupation', '')}\n"
+                            f"Experience: {qualification_updates.get('experience') or lead.get('experience', '')}\n"
+                            f"Budget: {qualification_updates.get('budget') or lead.get('budget', '')}\n"
+                            f"Availability: {qualification_updates.get('availability') or lead.get('availability', '')}\n"
+                            f"Score: {qualification_updates.get('lead_score') or ''}"
+                        )
+                        if RAJ_PHONE:
+                            raj_response = send_text(RAJ_PHONE, hot_summary)
+                            print("RAJ NOTIFY STATUS:", raj_response.status_code)
+                            print("RAJ NOTIFY RESPONSE:", raj_response.text)
+                            add_message(
+                                RAJ_PHONE,
+                                direction="outbound",
+                                body=hot_summary,
+                                message_id=None,
+                            )
+                        else:
+                            print("RAJ NOTIFY SKIPPED: RAJ_PHONE not set")
 
                 response = send_text(sender, reply_text)
                 print("AUTO REPLY STATUS:", response.status_code)
