@@ -1,5 +1,8 @@
 import os
 import re
+import json
+
+import requests
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -17,6 +20,14 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
 RAJ_PHONE = os.getenv("RAJ_PHONE", "").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+ENABLE_AI_INTENT_CLASSIFIER = os.getenv("ENABLE_AI_INTENT_CLASSIFIER", "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 ENABLE_GOOGLE_SHEETS = os.getenv("ENABLE_GOOGLE_SHEETS", "").lower() in {
     "1",
     "true",
@@ -25,6 +36,29 @@ ENABLE_GOOGLE_SHEETS = os.getenv("ENABLE_GOOGLE_SHEETS", "").lower() in {
 }
 print("TOKEN PREFIX:", ACCESS_TOKEN[:20] if ACCESS_TOKEN else "")
 init_db()
+
+SYSTEM_PROMPT = """
+Classify the user message.
+
+Return ONLY JSON.
+
+{
+  "intent":"",
+  "needs_human":false,
+  "reason":""
+}
+
+Possible intents:
+
+FEES
+SCHEDULE
+PLACEMENT
+REQUIREMENTS
+DISCOUNT_REQUEST
+TRAINER_REQUEST
+HRDC_QUERY
+GENERAL
+""".strip()
 
 
 def _faq_reply(msg: str) -> str:
@@ -47,6 +81,83 @@ def _faq_reply(msg: str) -> str:
             return reply
 
     return "Thank you for your interest. A consultant will contact you shortly."
+
+
+def _faq_reply_for_intent(intent: str) -> str:
+    replies = {
+        "FEES": "The course fee is RM XXXX. Would you like the full brochure?",
+        "SCHEDULE": "Classes start in July.",
+        "PLACEMENT": "We can share placement support details after a quick qualification.",
+        "REQUIREMENTS": "The main requirement is interest in software testing and commitment to attend.",
+        "HRDC_QUERY": "We can discuss HRDC eligibility with a consultant.",
+        "TRAINER_REQUEST": "A consultant can arrange a trainer discussion for you.",
+        "GENERAL": "Thank you for your interest. A consultant will contact you shortly.",
+    }
+    return replies.get(intent, replies["GENERAL"])
+
+
+def _classify_intent_with_gemini(message: str) -> dict[str, str | bool]:
+    default = {"intent": "GENERAL", "needs_human": False, "reason": ""}
+    if not ENABLE_AI_INTENT_CLASSIFIER or not GEMINI_API_KEY:
+        return default
+
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    )
+    payload = {
+        "systemInstruction": {
+            "parts": [{"text": SYSTEM_PROMPT}],
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": (
+                            "Classify this user message.\n"
+                            "Return only JSON.\n\n"
+                            f"Message: {message}"
+                        )
+                    }
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0,
+            "responseMimeType": "application/json",
+        },
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=20)
+        response.raise_for_status()
+        data = response.json()
+        text = (
+            data.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+        )
+        parsed = json.loads(text)
+        intent = str(parsed.get("intent") or "GENERAL").strip().upper()
+        needs_human = bool(parsed.get("needs_human", False))
+        reason = str(parsed.get("reason") or "").strip()
+        if intent not in {
+            "FEES",
+            "SCHEDULE",
+            "PLACEMENT",
+            "REQUIREMENTS",
+            "DISCOUNT_REQUEST",
+            "TRAINER_REQUEST",
+            "HRDC_QUERY",
+            "GENERAL",
+        }:
+            intent = "GENERAL"
+        return {"intent": intent, "needs_human": needs_human, "reason": reason}
+    except Exception as exc:
+        print("GEMINI CLASSIFIER ERROR:", exc)
+        return default
 
 
 def _update_sheet_if_enabled(phone: str, **kwargs) -> bool:
@@ -352,9 +463,64 @@ async def receive_whatsapp_event(request: Request):
                     )
                     return {"status": "received"}
 
+                ai_result = _classify_intent_with_gemini(msg)
+                print("AI INTENT:", ai_result)
+
+                if ai_result.get("needs_human"):
+                    reason = str(ai_result.get("reason") or "Intent requires human follow-up")
+                    local_updated = upsert_lead(
+                        sender,
+                        status="NEEDS_HUMAN",
+                        conversation_state="NEEDS_HUMAN",
+                        assigned_to="Raj",
+                        last_intent=str(ai_result.get("intent") or "GENERAL"),
+                        last_intent_reason=reason,
+                    )
+                    print("LOCAL AI ESCALATION UPDATED:", local_updated)
+                    updated = _update_sheet_if_enabled(
+                        sender,
+                        status="NEEDS_HUMAN",
+                        conversation_state="NEEDS_HUMAN",
+                        assigned_to="Raj",
+                        last_intent=str(ai_result.get("intent") or "GENERAL"),
+                        last_intent_reason=reason,
+                    )
+                    print("SHEET AI ESCALATION UPDATED:", updated)
+
+                    human_summary = _human_handoff_summary(sender, lead, reason)
+                    if RAJ_PHONE:
+                        raj_response = send_text(RAJ_PHONE, human_summary)
+                        print("RAJ AI ALERT STATUS:", raj_response.status_code)
+                        print("RAJ AI ALERT RESPONSE:", raj_response.text)
+                        add_message(
+                            RAJ_PHONE,
+                            direction="outbound",
+                            body=human_summary,
+                            message_id=None,
+                        )
+                    else:
+                        print("RAJ AI ALERT SKIPPED: RAJ_PHONE not set")
+
+                    customer_reply = (
+                        "Thanks. A consultant will contact you shortly regarding that request."
+                    )
+                    response = send_text(sender, customer_reply)
+                    print("AUTO REPLY STATUS:", response.status_code)
+                    print("AUTO REPLY RESPONSE:", response.text)
+                    add_message(
+                        sender,
+                        direction="outbound",
+                        body=customer_reply,
+                        message_id=None,
+                    )
+                    return {"status": "received"}
+
                 reply_text, state_updates = _process_conversation(msg, lead)
                 if reply_text is None:
-                    reply_text = _faq_reply(msg)
+                    intent = str(ai_result.get("intent") or "GENERAL")
+                    reply_text = _faq_reply_for_intent(intent)
+                    if intent == "DISCOUNT_REQUEST":
+                        reply_text = "Thanks. A consultant will contact you shortly regarding pricing."
                     state_updates = None
 
                 if state_updates:
@@ -382,9 +548,21 @@ async def receive_whatsapp_event(request: Request):
                 print("AUTO REPLY STATUS:", response.status_code)
                 print("AUTO REPLY RESPONSE:", response.text)
 
-                local_updated = upsert_lead(sender, last_message=reply_text, last_reply=msg)
+                local_updated = upsert_lead(
+                    sender,
+                    last_intent=str(ai_result.get("intent") or "GENERAL"),
+                    last_intent_reason=str(ai_result.get("reason") or ""),
+                    last_message=reply_text,
+                    last_reply=msg,
+                )
                 print("LOCAL UPDATED AFTER REPLY:", local_updated)
-                updated = _update_sheet_if_enabled(sender, last_message=reply_text, last_reply=msg)
+                updated = _update_sheet_if_enabled(
+                    sender,
+                    last_intent=str(ai_result.get("intent") or "GENERAL"),
+                    last_intent_reason=str(ai_result.get("reason") or ""),
+                    last_message=reply_text,
+                    last_reply=msg,
+                )
                 print("SHEET UPDATED AFTER REPLY:", updated)
 
                 try:

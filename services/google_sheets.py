@@ -85,6 +85,8 @@ def update_lead(
     status: str | None = None,
     conversation_state: str | None = None,
     qualification_step: str | None = None,
+    last_intent: str | None = None,
+    last_intent_reason: str | None = None,
     last_message: str | None = None,
     last_reply: str | None = None,
     assigned_to: str | None = None,
@@ -106,6 +108,10 @@ def update_lead(
         updates.append(("conversation_state", conversation_state))
     if qualification_step is not None:
         updates.append(("qualification_step", qualification_step))
+    if last_intent is not None:
+        updates.append(("last_intent", last_intent))
+    if last_intent_reason is not None:
+        updates.append(("last_intent_reason", last_intent_reason))
     if last_message is not None:
         updates.append(("last_message", last_message))
     if last_reply is not None:

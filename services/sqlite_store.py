@@ -47,6 +47,8 @@ def init_db() -> None:
                 status TEXT,
                 conversation_state TEXT,
                 qualification_step TEXT,
+                last_intent TEXT,
+                last_intent_reason TEXT,
                 last_message TEXT,
                 last_reply TEXT,
                 assigned_to TEXT,
@@ -66,6 +68,8 @@ def init_db() -> None:
         for column_sql, column_name in [
             ("ALTER TABLE leads ADD COLUMN conversation_state TEXT", "conversation_state"),
             ("ALTER TABLE leads ADD COLUMN qualification_step TEXT", "qualification_step"),
+            ("ALTER TABLE leads ADD COLUMN last_intent TEXT", "last_intent"),
+            ("ALTER TABLE leads ADD COLUMN last_intent_reason TEXT", "last_intent_reason"),
             ("ALTER TABLE leads ADD COLUMN occupation TEXT", "occupation"),
             ("ALTER TABLE leads ADD COLUMN experience TEXT", "experience"),
             ("ALTER TABLE leads ADD COLUMN budget TEXT", "budget"),
@@ -94,6 +98,8 @@ def upsert_lead(
     status: str | None = None,
     conversation_state: str | None = None,
     qualification_step: str | None = None,
+    last_intent: str | None = None,
+    last_intent_reason: str | None = None,
     last_message: str | None = None,
     last_reply: str | None = None,
     assigned_to: str | None = None,
@@ -114,16 +120,18 @@ def upsert_lead(
         conn.execute(
             """
             INSERT INTO leads (
-                phone, name, course, status, conversation_state, qualification_step, last_message, last_reply,
-                assigned_to, occupation, experience, budget, availability, lead_score, updated_at
+                phone, name, course, status, conversation_state, qualification_step, last_intent, last_intent_reason,
+                last_message, last_reply, assigned_to, occupation, experience, budget, availability, lead_score, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(phone) DO UPDATE SET
                 name = COALESCE(excluded.name, leads.name),
                 course = COALESCE(excluded.course, leads.course),
                 status = COALESCE(excluded.status, leads.status),
                 conversation_state = COALESCE(excluded.conversation_state, leads.conversation_state),
                 qualification_step = COALESCE(excluded.qualification_step, leads.qualification_step),
+                last_intent = COALESCE(excluded.last_intent, leads.last_intent),
+                last_intent_reason = COALESCE(excluded.last_intent_reason, leads.last_intent_reason),
                 last_message = COALESCE(excluded.last_message, leads.last_message),
                 last_reply = COALESCE(excluded.last_reply, leads.last_reply),
                 assigned_to = COALESCE(excluded.assigned_to, leads.assigned_to),
@@ -141,6 +149,8 @@ def upsert_lead(
                 status,
                 conversation_state,
                 qualification_step,
+                last_intent,
+                last_intent_reason,
                 last_message,
                 last_reply,
                 assigned_to,
