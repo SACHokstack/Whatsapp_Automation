@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 
 from services.google_sheets import update_lead
+from services.sqlite_store import add_message, init_db, upsert_lead
 
 load_dotenv()
 
@@ -14,6 +15,7 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
 print("TOKEN PREFIX:", ACCESS_TOKEN[:20] if ACCESS_TOKEN else "")
+init_db()
 
 
 @app.get("/")
@@ -49,12 +51,24 @@ async def receive_whatsapp_event(request: Request):
 
             if msg and sender:
                 print("MESSAGE:", msg)
+                add_message(
+                    sender,
+                    direction="inbound",
+                    body=msg,
+                    message_id=value["messages"][0].get("id"),
+                )
+                local_updated = upsert_lead(
+                    sender,
+                    status="REPLIED",
+                    last_reply=msg,
+                )
                 updated = update_lead(
                     sender,
                     status="REPLIED",
                     last_reply=msg,
                 )
-                print("LEAD UPDATED:", updated)
+                print("LOCAL UPDATED:", local_updated)
+                print("SHEET UPDATED:", updated)
 
         if "statuses" in value:
             for status in value["statuses"]:

@@ -79,6 +79,8 @@ def send_template(
         },
         timeout=30,
     )
+    print(response.status_code)
+    print(response.text)
     return response
 
 
@@ -92,8 +94,18 @@ def send_template_and_mark_contacted(
     if response.ok:
         try:
             from services.google_sheets import update_lead
+            from services.sqlite_store import add_message, upsert_lead
 
             update_lead(to, status="CONTACTED", last_message=template_name)
+            upsert_lead(to, status="CONTACTED", last_message=template_name)
+            add_message(
+                to,
+                direction="outbound",
+                body=template_name,
+                message_id=response.json().get("messages", [{}])[0].get("id")
+                if response.headers.get("content-type", "").startswith("application/json")
+                else None,
+            )
         except Exception:
             pass
     return response
