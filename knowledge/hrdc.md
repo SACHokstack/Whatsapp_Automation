@@ -8,3 +8,5 @@ Useful HRDC details:
 - HRDC applications are normally submitted by the company HR, L&D team, or HRDC admin via the HRDC portal
 - Typical approval time: 1 to 3 working days
 - Available supporting documents include course outline, trainer profile, official quotation, and HRDC registration information
+
+If the lead is unemployed, HRDC coverage usually depends on the sponsoring employer or organization, so route that case to a consultant.

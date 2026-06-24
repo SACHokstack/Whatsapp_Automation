@@ -225,3 +225,60 @@ def add_message(
             (phone, direction, body, message_id, _utc_now()),
         )
     return True
+
+
+def get_messages(phone: str, *, limit: int | None = None) -> list[dict[str, str]]:
+    phone = str(phone).strip()
+    if not phone:
+        return []
+
+    init_db()
+    query = "SELECT phone, direction, body, message_id, created_at FROM messages WHERE phone = ? ORDER BY id ASC"
+    params: tuple[object, ...] = (phone,)
+    if limit is not None and limit > 0:
+        query += " LIMIT ?"
+        params = (phone, limit)
+
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+
+    return [
+        {
+            "phone": str(row["phone"]),
+            "direction": str(row["direction"]),
+            "body": str(row["body"]),
+            "message_id": "" if row["message_id"] is None else str(row["message_id"]),
+            "created_at": str(row["created_at"]),
+        }
+        for row in rows
+    ]
+
+
+def get_conversation_history(phone: str, *, limit: int | None = None) -> list[dict[str, str]]:
+    return get_messages(phone, limit=limit)
+
+
+def get_dashboard_summary() -> dict[str, object]:
+    init_db()
+    with get_connection() as conn:
+        lead_rows = conn.execute(
+            """
+            SELECT
+                COALESCE(status, 'UNKNOWN') AS status,
+                COUNT(*) AS count
+            FROM leads
+            GROUP BY COALESCE(status, 'UNKNOWN')
+            ORDER BY count DESC, status ASC
+            """
+        ).fetchall()
+        total_leads = conn.execute("SELECT COUNT(*) AS count FROM leads").fetchone()["count"]
+        total_messages = conn.execute("SELECT COUNT(*) AS count FROM messages").fetchone()["count"]
+
+    return {
+        "total_leads": int(total_leads or 0),
+        "total_messages": int(total_messages or 0),
+        "leads_by_status": [
+            {"status": str(row["status"]), "count": int(row["count"])}
+            for row in lead_rows
+        ],
+    }

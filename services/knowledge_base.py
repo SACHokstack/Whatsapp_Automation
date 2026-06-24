@@ -31,15 +31,17 @@ KEYWORD_FALLBACKS = [
 
 TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "fees": ("fee", "fees", "price", "pricing", "cost", "how much"),
-    "schedule": ("schedule", "date", "dates", "when", "timing", "intake"),
+    "schedule": ("schedule", "date", "dates", "when", "timing", "intake", "next month", "month", "join", "start", "starting", "after work", "evening", "weekend"),
     "venue": ("venue", "where", "location", "site", "ibis", "petaling jaya"),
     "payment": ("payment", "pay", "installment", "installments", "bank transfer", "invoice", "quotation"),
     "cancellation": ("cancel", "cancellation", "reschedule", "refund"),
     "certification": ("certificate", "certification", "certificates"),
     "trainers": ("trainer", "trainers", "trainer profile", "trainer discussion", "who is the trainer"),
     "placement": ("placement", "career", "job support", "post-training", "opportunity"),
-    "requirements": ("requirement", "requirements", "prerequisite", "prerequisites", "need to"),
-    "hrdc": ("hrdc", "claimable", "grant", "approval", "portal"),
+    "requirements": ("requirement", "requirements", "prerequisite", "prerequisites", "need to", "programming", "coding", "background", "knowledge"),
+    "hrdc": ("hrdc", "claimable", "grant", "approval", "portal", "sponsor", "sponsored", "funding", "cover", "unemployed"),
+    "online": ("online", "virtual", "remote", "zoom", "google meet"),
+    "batch_size": ("batch size", "batch", "students per batch", "class size", "how many students"),
 }
 
 STOPWORDS = {
@@ -137,6 +139,52 @@ def _best_search_topic(message: str) -> str | None:
     return None
 
 
+def ranked_topics_for_message(message: str, limit: int = 3) -> list[str]:
+    kb = load_knowledge_base()
+    if not kb:
+        return []
+
+    msg_lower = _normalize(message)
+    query_tokens = _tokenize(message)
+    scored: list[tuple[int, str]] = []
+
+    for topic, text in kb.items():
+        score = 0
+        topic_keywords = TOPIC_KEYWORDS.get(topic, ())
+        for keyword in topic_keywords:
+            if keyword in msg_lower:
+                score += 3
+        score += len(query_tokens & _tokenize(topic))
+        score += len(query_tokens & _tokenize(text))
+        if score > 0:
+            scored.append((score, topic))
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [topic for _, topic in scored[:limit]]
+
+
+def search_knowledge(query: str, limit: int = 3) -> list[dict[str, str]]:
+    kb = load_knowledge_base()
+    topics = ranked_topics_for_message(query, limit=limit)
+    results: list[dict[str, str]] = []
+    for topic in topics:
+        text = kb.get(topic, "")
+        if text:
+            results.append({"topic": topic, "content": text})
+    return results
+
+
+def retrieve_knowledge_snippets(message: str, limit: int = 2) -> list[dict[str, str]]:
+    return search_knowledge(message, limit=limit)
+
+
+def get_best_document(query: str) -> dict[str, str] | None:
+    matches = search_knowledge(query, limit=1)
+    if matches:
+        return matches[0]
+    return None
+
+
 def answer_for_message(message: str) -> str:
     msg_lower = (message or "").strip().lower()
     for keyword, reply in KEYWORD_FALLBACKS:
@@ -148,6 +196,13 @@ def answer_for_message(message: str) -> str:
     if topic and topic in kb:
         return kb[topic]
 
+    return DEFAULT_GENERAL_REPLY
+
+
+def answer_from_knowledge(query: str) -> str:
+    document = get_best_document(query)
+    if document:
+        return document["content"]
     return DEFAULT_GENERAL_REPLY
 
 

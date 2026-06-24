@@ -1,9 +1,6 @@
 import os
 import re
-import json
 from datetime import datetime, timezone
-
-import requests
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -11,7 +8,14 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from services.knowledge_base import answer_for_message, topic_for_message
 from services.google_sheets import update_lead
 from services.whatsapp import send_text
-from services.sqlite_store import add_message, get_lead, init_db, upsert_lead
+from services.sqlite_store import (
+    add_message,
+    get_conversation_history,
+    get_dashboard_summary,
+    get_lead,
+    init_db,
+    upsert_lead,
+)
 
 load_dotenv()
 
@@ -19,52 +23,13 @@ app = FastAPI()
 seen_status_events: set[tuple[str, str]] = set()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-ACCESS_TOKEN = os.getenv("WHATSAPP_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
-ENABLE_AI_INTENT_CLASSIFIER = os.getenv("ENABLE_AI_INTENT_CLASSIFIER", "").lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
 ENABLE_GOOGLE_SHEETS = os.getenv("ENABLE_GOOGLE_SHEETS", "").lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-print("TOKEN PREFIX:", ACCESS_TOKEN[:20] if ACCESS_TOKEN else "")
 init_db()
-
-SYSTEM_PROMPT = """
-Classify the user message.
-
-Return ONLY JSON.
-
-{
-  "intent":"",
-  "needs_human":false,
-  "reason":""
-}
-
-Possible intents:
-
-FEES
-SCHEDULE
-VENUE
-PAYMENT
-CANCELLATION
-CERTIFICATION
-TRAINERS
-PLACEMENT
-REQUIREMENTS
-DISCOUNT_REQUEST
-TRAINER_REQUEST
-HRDC_QUERY
-GENERAL
-""".strip()
 
 
 def _faq_reply(msg: str) -> str:
@@ -329,6 +294,27 @@ def home():
     return {
         "status": "running",
         "service": "Timmins WhatsApp Webhook",
+    }
+
+
+@app.get("/stats")
+def stats():
+    return get_dashboard_summary()
+
+
+@app.get("/conversation/{phone}")
+def conversation(phone: str):
+    return {
+        "phone": phone,
+        "history": get_conversation_history(phone),
+    }
+
+
+@app.get("/lead/{phone}")
+def lead_detail(phone: str):
+    return {
+        "lead": get_lead(phone),
+        "history": get_conversation_history(phone),
     }
 
 

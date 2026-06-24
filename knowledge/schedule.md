@@ -7,4 +7,6 @@ Software Testing intake dates:
 - 8 July 2026
 - 9 July 2026
 
+If the lead asks about after-work classes, share the intake dates first and ask a consultant to confirm the session timing.
+
 If the lead asks for timing or class dates, share these intake dates and offer to send the full brochure.
