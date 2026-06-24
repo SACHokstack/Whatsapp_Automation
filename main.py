@@ -8,6 +8,7 @@ import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 
+from services.knowledge_base import answer_for_intent, answer_for_message
 from services.google_sheets import update_lead
 from services.whatsapp import send_text
 from services.sqlite_store import add_message, get_lead, init_db, upsert_lead
@@ -52,6 +53,11 @@ Possible intents:
 
 FEES
 SCHEDULE
+VENUE
+PAYMENT
+CANCELLATION
+CERTIFICATION
+TRAINERS
 PLACEMENT
 REQUIREMENTS
 DISCOUNT_REQUEST
@@ -62,38 +68,11 @@ GENERAL
 
 
 def _faq_reply(msg: str) -> str:
-    msg_lower = msg.lower()
-
-    faq_kb = {
-        "fees": "The course fee is RM XXXX. Would you like the full brochure?",
-        "fee": "The course fee is RM XXXX. Would you like the full brochure?",
-        "duration": "The program runs for X weeks.",
-        "placement": "We can share placement support details after a quick qualification.",
-        "schedule": "Classes start in July.",
-        "requirements": "The main requirement is interest in software testing and commitment to attend.",
-    }
-
-    if msg_lower in {"hi", "hello", "hey"}:
-        return "Hi, this is Timmins Training. How can we help you today?"
-
-    for keyword, reply in faq_kb.items():
-        if keyword in msg_lower:
-            return reply
-
-    return "Thank you for your interest. A consultant will contact you shortly."
+    return answer_for_message(msg)
 
 
 def _faq_reply_for_intent(intent: str) -> str:
-    replies = {
-        "FEES": "The course fee is RM XXXX. Would you like the full brochure?",
-        "SCHEDULE": "Classes start in July.",
-        "PLACEMENT": "We can share placement support details after a quick qualification.",
-        "REQUIREMENTS": "The main requirement is interest in software testing and commitment to attend.",
-        "HRDC_QUERY": "We can discuss HRDC eligibility with a consultant.",
-        "TRAINER_REQUEST": "A consultant can arrange a trainer discussion for you.",
-        "GENERAL": "Thank you for your interest. A consultant will contact you shortly.",
-    }
-    return replies.get(intent, replies["GENERAL"])
+    return answer_for_intent(intent)
 
 
 def _classify_intent_with_gemini(message: str) -> dict[str, str | bool]:
@@ -144,13 +123,18 @@ def _classify_intent_with_gemini(message: str) -> dict[str, str | bool]:
         needs_human = bool(parsed.get("needs_human", False))
         reason = str(parsed.get("reason") or "").strip()
         if intent not in {
-            "FEES",
-            "SCHEDULE",
-            "PLACEMENT",
-            "REQUIREMENTS",
-            "DISCOUNT_REQUEST",
-            "TRAINER_REQUEST",
-            "HRDC_QUERY",
+        "FEES",
+        "SCHEDULE",
+        "VENUE",
+        "PAYMENT",
+        "CANCELLATION",
+        "CERTIFICATION",
+        "TRAINERS",
+        "PLACEMENT",
+        "REQUIREMENTS",
+        "DISCOUNT_REQUEST",
+        "TRAINER_REQUEST",
+        "HRDC_QUERY",
             "GENERAL",
         }:
             intent = "GENERAL"
@@ -504,7 +488,7 @@ async def receive_whatsapp_event(request: Request):
                 reply_text, state_updates = _process_conversation(msg, lead)
                 if reply_text is None:
                     intent = str(ai_result.get("intent") or "GENERAL")
-                    reply_text = _faq_reply_for_intent(intent)
+                    reply_text = _faq_reply(msg) if intent == "GENERAL" else _faq_reply_for_intent(intent)
                     if intent == "DISCOUNT_REQUEST":
                         reply_text = "Thanks. A consultant will contact you shortly regarding pricing."
                     state_updates = None
