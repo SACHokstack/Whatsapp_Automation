@@ -8,7 +8,7 @@ import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 
-from services.knowledge_base import answer_for_intent, answer_for_message
+from services.knowledge_base import answer_for_message, topic_for_message
 from services.google_sheets import update_lead
 from services.whatsapp import send_text
 from services.sqlite_store import add_message, get_lead, init_db, upsert_lead
@@ -69,79 +69,6 @@ GENERAL
 
 def _faq_reply(msg: str) -> str:
     return answer_for_message(msg)
-
-
-def _faq_reply_for_intent(intent: str) -> str:
-    return answer_for_intent(intent)
-
-
-def _classify_intent_with_gemini(message: str) -> dict[str, str | bool]:
-    default = {"intent": "GENERAL", "needs_human": False, "reason": ""}
-    if not ENABLE_AI_INTENT_CLASSIFIER or not GEMINI_API_KEY:
-        return default
-
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    )
-    payload = {
-        "systemInstruction": {
-            "parts": [{"text": SYSTEM_PROMPT}],
-        },
-        "contents": [
-            {
-                "role": "user",
-                "parts": [
-                    {
-                        "text": (
-                            "Classify this user message.\n"
-                            "Return only JSON.\n\n"
-                            f"Message: {message}"
-                        )
-                    }
-                ],
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0,
-            "responseMimeType": "application/json",
-        },
-    }
-
-    try:
-        response = requests.post(url, json=payload, timeout=20)
-        response.raise_for_status()
-        data = response.json()
-        text = (
-            data.get("candidates", [{}])[0]
-            .get("content", {})
-            .get("parts", [{}])[0]
-            .get("text", "")
-        )
-        parsed = json.loads(text)
-        intent = str(parsed.get("intent") or "GENERAL").strip().upper()
-        needs_human = bool(parsed.get("needs_human", False))
-        reason = str(parsed.get("reason") or "").strip()
-        if intent not in {
-        "FEES",
-        "SCHEDULE",
-        "VENUE",
-        "PAYMENT",
-        "CANCELLATION",
-        "CERTIFICATION",
-        "TRAINERS",
-        "PLACEMENT",
-        "REQUIREMENTS",
-        "DISCOUNT_REQUEST",
-        "TRAINER_REQUEST",
-        "HRDC_QUERY",
-            "GENERAL",
-        }:
-            intent = "GENERAL"
-        return {"intent": intent, "needs_human": needs_human, "reason": reason}
-    except Exception as exc:
-        print("GEMINI CLASSIFIER ERROR:", exc)
-        return default
 
 
 def _update_sheet_if_enabled(phone: str, **kwargs) -> bool:
@@ -456,42 +383,12 @@ async def receive_whatsapp_event(request: Request):
                     )
                     return {"status": "received"}
 
-                ai_result = {"intent": "GENERAL", "needs_human": False, "reason": ""}
-                if not _is_active_qualification_state(lead):
-                    ai_result = _classify_intent_with_gemini(msg)
-                print("AI INTENT:", ai_result)
-
-                if ai_result.get("needs_human"):
-                    reason = str(ai_result.get("reason") or "Intent requires human follow-up")
-                    _queue_human_handoff(
-                        sender,
-                        lead,
-                        reason=reason,
-                        source="ai",
-                        intent=str(ai_result.get("intent") or "GENERAL"),
-                    )
-
-                    customer_reply = (
-                        "Thanks. A consultant will contact you shortly regarding that request."
-                    )
-                    response = send_text(sender, customer_reply)
-                    print("AUTO REPLY STATUS:", response.status_code)
-                    print("AUTO REPLY RESPONSE:", response.text)
-                    add_message(
-                        sender,
-                        direction="outbound",
-                        body=customer_reply,
-                        message_id=None,
-                    )
-                    return {"status": "received"}
-
                 reply_text, state_updates = _process_conversation(msg, lead)
                 if reply_text is None:
-                    intent = str(ai_result.get("intent") or "GENERAL")
-                    reply_text = _faq_reply(msg) if intent == "GENERAL" else _faq_reply_for_intent(intent)
-                    if intent == "DISCOUNT_REQUEST":
-                        reply_text = "Thanks. A consultant will contact you shortly regarding pricing."
+                    reply_text = _faq_reply(msg)
                     state_updates = None
+                topic_label = str(topic_for_message(msg) or "GENERAL").upper()
+                topic_reason = "deterministic_knowledge_base"
 
                 if state_updates:
                     local_updated = upsert_lead(sender, **state_updates)
@@ -516,16 +413,16 @@ async def receive_whatsapp_event(request: Request):
 
                 local_updated = upsert_lead(
                     sender,
-                    last_intent=str(ai_result.get("intent") or "GENERAL"),
-                    last_intent_reason=str(ai_result.get("reason") or ""),
+                    last_intent=topic_label,
+                    last_intent_reason=topic_reason,
                     last_message=reply_text,
                     last_reply=msg,
                 )
                 print("LOCAL UPDATED AFTER REPLY:", local_updated)
                 updated = _update_sheet_if_enabled(
                     sender,
-                    last_intent=str(ai_result.get("intent") or "GENERAL"),
-                    last_intent_reason=str(ai_result.get("reason") or ""),
+                    last_intent=topic_label,
+                    last_intent_reason=topic_reason,
                     last_message=reply_text,
                     last_reply=msg,
                 )
