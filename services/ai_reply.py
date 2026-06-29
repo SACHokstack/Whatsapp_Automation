@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 from groq import Groq
 
-from services.knowledge_base import search_knowledge
+from services.knowledge_base import build_rag_context
+
+if TYPE_CHECKING:
+    from services.course_loader import CourseConfig
 
 _client: Groq | None = None
 
@@ -30,14 +34,10 @@ Rules:
 _DEFAULT_REPLY = "Thank you for your interest. A consultant will contact you shortly."
 
 
-def ai_reply(message: str) -> str:
-    docs = search_knowledge(message, limit=3)
-    if not docs:
+def ai_reply(message: str, course: CourseConfig | None = None) -> str:
+    context = build_rag_context(message, course)
+    if not context:
         return _DEFAULT_REPLY
-
-    context = "\n\n".join(
-        f"[{d['topic'].upper()}]\n{d['content']}" for d in docs
-    )
 
     try:
         response = _get_client().chat.completions.create(

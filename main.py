@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 
 from services.ai_reply import ai_reply
+from services.course_loader import detect_course, get_course
 from services.knowledge_base import topic_for_message
 from services.reply_cache import get as cache_get
 from services.reply_cache import set as cache_set
@@ -35,14 +36,23 @@ ENABLE_GOOGLE_SHEETS = os.getenv("ENABLE_GOOGLE_SHEETS", "").lower() in {
 init_db()
 
 
-def _faq_reply(msg: str) -> str:
-    cached = cache_get(msg)
+def _faq_reply(msg: str, course=None) -> str:
+    cache_key = f"{getattr(course, 'slug', '')}:{msg}"
+    cached = cache_get(cache_key)
     if cached:
         print("CACHE HIT:", msg[:40])
         return cached
-    reply = ai_reply(msg)
-    cache_set(msg, reply)
+    reply = ai_reply(msg, course=course)
+    cache_set(cache_key, reply)
     return reply
+
+
+def _resolve_course(lead: dict, msg: str):
+    slug = lead.get("course") or ""
+    if slug:
+        return get_course(slug)
+    course = detect_course(msg)
+    return course
 
 
 def _update_sheet_if_enabled(phone: str, **kwargs) -> bool:
@@ -356,6 +366,9 @@ def _handle_webhook_body(body: dict) -> None:
                     message_id=value["messages"][0].get("id"),
                 )
                 lead = get_lead(sender) or {}
+                course = _resolve_course(lead, msg)
+                if course and not lead.get("course"):
+                    upsert_lead(sender, course=course.slug)
 
                 human_reason = _human_escalation_reason(msg.lower())
                 if human_reason:
@@ -377,7 +390,7 @@ def _handle_webhook_body(body: dict) -> None:
 
                 reply_text, state_updates = _process_conversation(msg, lead)
                 if reply_text is None:
-                    reply_text = _faq_reply(msg)
+                    reply_text = _faq_reply(msg, course=course)
                     state_updates = None
                 topic_label = str(topic_for_message(msg) or "GENERAL").upper()
                 topic_reason = "groq_rag"
