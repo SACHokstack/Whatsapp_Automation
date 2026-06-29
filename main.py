@@ -3,9 +3,12 @@ import re
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 
-from services.knowledge_base import answer_for_message, topic_for_message
+from services.ai_reply import ai_reply
+from services.knowledge_base import topic_for_message
+from services.reply_cache import get as cache_get
+from services.reply_cache import set as cache_set
 from services.google_sheets import update_lead
 from services.whatsapp import send_text
 from services.sqlite_store import (
@@ -33,7 +36,13 @@ init_db()
 
 
 def _faq_reply(msg: str) -> str:
-    return answer_for_message(msg)
+    cached = cache_get(msg)
+    if cached:
+        print("CACHE HIT:", msg[:40])
+        return cached
+    reply = ai_reply(msg)
+    cache_set(msg, reply)
+    return reply
 
 
 def _update_sheet_if_enabled(phone: str, **kwargs) -> bool:
@@ -330,10 +339,7 @@ def verify_webhook(
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
-@app.post("/webhook/whatsapp")
-async def receive_whatsapp_event(request: Request):
-    body = await request.json()
-
+def _handle_webhook_body(body: dict) -> None:
     try:
         value = body["entry"][0]["changes"][0]["value"]
 
@@ -367,14 +373,14 @@ async def receive_whatsapp_event(request: Request):
                         body=customer_reply,
                         message_id=None,
                     )
-                    return {"status": "received"}
+                    return
 
                 reply_text, state_updates = _process_conversation(msg, lead)
                 if reply_text is None:
                     reply_text = _faq_reply(msg)
                     state_updates = None
                 topic_label = str(topic_for_message(msg) or "GENERAL").upper()
-                topic_reason = "deterministic_knowledge_base"
+                topic_reason = "groq_rag"
 
                 if state_updates:
                     local_updated = upsert_lead(sender, **state_updates)
@@ -449,4 +455,9 @@ async def receive_whatsapp_event(request: Request):
     except Exception as e:
         print(e)
 
+
+@app.post("/webhook/whatsapp")
+async def receive_whatsapp_event(request: Request, background_tasks: BackgroundTasks):
+    body = await request.json()
+    background_tasks.add_task(_handle_webhook_body, body)
     return {"status": "received"}

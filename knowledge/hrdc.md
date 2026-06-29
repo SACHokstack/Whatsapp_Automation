@@ -2,11 +2,21 @@
 
 Timmins Training delivers HRDC-registered training programs and can provide HRDC registration details upon request.
 
-Useful HRDC details:
+How to apply for HRDC grant:
+The HRDC application is submitted by your company's HR, Learning & Development team, or HRDC administrator through the HRDC portal.
 
-- HRDC approval should ideally be received by 2 July 2026 for this intake
-- HRDC applications are normally submitted by the company HR, L&D team, or HRDC admin via the HRDC portal
-- Typical approval time: 1 to 3 working days
-- Available supporting documents include course outline, trainer profile, official quotation, and HRDC registration information
+Documents Timmins can provide for your HRDC application:
+- HRDC-registered course outline
+- Trainer profile
+- Official quotation
+- HRDC registration information
 
-If the lead is unemployed, HRDC coverage usually depends on the sponsoring employer or organization, so route that case to a consultant.
+Timeline:
+- Typical HRDC approval: 1 to 3 working days
+- Recommended submission: at least one week before training
+- For this July 2026 intake, HRDC approval should ideally be received by 2 July 2026
+
+A seat is confirmed once HRDC grant approval is received.
+
+---
+If the lead is unemployed, HRDC coverage usually depends on the sponsoring employer or organization — route that case to a consultant.

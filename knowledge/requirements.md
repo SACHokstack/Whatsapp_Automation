@@ -1,10 +1,13 @@
 # Requirements
 
-Basic requirement:
+Prerequisites for this course:
+- Basic software testing knowledge
+- Familiarity with web applications
+- Basic programming knowledge
 
-- Interest in software testing
-- Commitment to attend the training
+No prior Playwright or automation experience is required. The course is suitable for beginners with basic software testing and programming familiarity.
 
-No programming knowledge is required to start unless a consultant says otherwise for a specific intake.
+Participants may bring their own laptop or use a Timmins-provided laptop where available.
 
+---
 If the lead asks about prerequisites, answer simply and offer to share the full brochure.

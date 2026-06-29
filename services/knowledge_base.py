@@ -19,6 +19,8 @@ INTENT_TO_TOPIC = {
     "PLACEMENT": "placement",
     "REQUIREMENTS": "requirements",
     "HRDC_QUERY": "hrdc",
+    "COMPANY": "company",
+    "COURSE": "course",
 }
 
 DEFAULT_GENERAL_REPLY = "Thank you for your interest. A consultant will contact you shortly."
@@ -30,16 +32,18 @@ KEYWORD_FALLBACKS = [
 ]
 
 TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "company": ("who is timmins", "about timmins", "timmins training", "what is timmins", "your company", "clients", "industries", "vendor registration", "vendor", "contact timmins", "your clients"),
+    "course": ("playwright", "typescript", "bdd", "cucumber", "ci/cd", "azure devops", "selenium", "page object", "api testing", "ui automation", "automation framework", "course content", "curriculum", "syllabus", "who should attend", "what will i learn", "course overview", "chatgpt", "github copilot", "copilot", "ai testing", "devops", "final project", "end to end"),
     "fees": ("fee", "fees", "price", "pricing", "cost", "how much"),
     "schedule": ("schedule", "date", "dates", "when", "timing", "intake", "next month", "month", "join", "start", "starting", "after work", "evening", "weekend"),
-    "venue": ("venue", "where", "location", "site", "ibis", "petaling jaya"),
+    "venue": ("venue", "location", "site", "ibis", "petaling jaya"),
     "payment": ("payment", "pay", "installment", "installments", "bank transfer", "invoice", "quotation"),
     "cancellation": ("cancel", "cancellation", "reschedule", "refund"),
-    "certification": ("certificate", "certification", "certificates"),
+    "certification": ("certificate", "certification", "certificates", "what is included", "whats included"),
     "trainers": ("trainer", "trainers", "trainer profile", "trainer discussion", "who is the trainer"),
     "placement": ("placement", "career", "job support", "post-training", "opportunity"),
-    "requirements": ("requirement", "requirements", "prerequisite", "prerequisites", "need to", "programming", "coding", "background", "knowledge"),
-    "hrdc": ("hrdc", "claimable", "grant", "approval", "portal", "sponsor", "sponsored", "funding", "cover", "unemployed"),
+    "requirements": ("requirement", "requirements", "prerequisite", "prerequisites", "need to", "background", "laptop", "bring my own", "beginner"),
+    "hrdc": ("hrdc", "claimable", "grant", "hrdc approval", "portal", "sponsor", "sponsored", "hrdc funding", "unemployed"),
     "online": ("online", "virtual", "remote", "zoom", "google meet"),
     "batch_size": ("batch size", "batch", "students per batch", "class size", "how many students"),
 }
@@ -81,6 +85,12 @@ STOPWORDS = {
 }
 
 
+def _strip_internal_notes(text: str) -> str:
+    """Return only the customer-facing portion above the first --- separator."""
+    parts = re.split(r"^\s*---\s*$", text, maxsplit=1, flags=re.MULTILINE)
+    return parts[0].strip()
+
+
 @lru_cache(maxsize=1)
 def load_knowledge_base() -> dict[str, str]:
     kb: dict[str, str] = {}
@@ -88,7 +98,8 @@ def load_knowledge_base() -> dict[str, str]:
         return kb
 
     for path in _KNOWLEDGE_DIR.glob("*.md"):
-        kb[path.stem.lower()] = path.read_text(encoding="utf-8").strip()
+        raw = path.read_text(encoding="utf-8").strip()
+        kb[path.stem.lower()] = _strip_internal_notes(raw)
     return kb
 
 
