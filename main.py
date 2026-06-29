@@ -71,75 +71,6 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _is_yes(msg_lower: str) -> bool:
-    return msg_lower in {"yes", "y", "yeah", "yep", "sure", "ok", "okay"}
-
-
-def _is_no(msg_lower: str) -> bool:
-    return msg_lower in {"no", "n", "nope", "not really"}
-
-
-def _lead_score(data: dict[str, str]) -> int:
-    score = 0
-    occupation = (data.get("occupation") or "").strip().lower()
-    experience = (data.get("experience") or "").strip().lower()
-    budget = (data.get("budget") or "").strip().lower()
-    availability = (data.get("availability") or "").strip().lower()
-
-    if occupation == "graduate":
-        score += 3
-
-    if experience == "yes":
-        score += 2
-
-    budget_value = _extract_int(budget)
-    if budget_value is not None and budget_value >= 4000:
-        score += 4
-
-    availability_days = _extract_availability_days(availability)
-    if availability_days is not None and availability_days <= 30:
-        score += 2
-    return score
-
-
-def _lead_status_from_score(score: int) -> str:
-    if score >= 8:
-        return "HOT"
-    if score >= 5:
-        return "WARM"
-    return "COLD"
-
-
-def _qualification_prompt() -> str:
-    return "Great. Are you:\n1. Student\n2. Graduate\n3. Working professional"
-
-
-def _experience_prompt() -> str:
-    return "Do you have software testing experience? Reply Yes or No."
-
-
-def _budget_prompt() -> str:
-    return "What is your budget for the course? Reply with an amount like RM4000."
-
-
-def _availability_prompt() -> str:
-    return "When are you available to start? Reply with days, for example 14 days or immediately."
-
-
-def _final_qualification_reply() -> str:
-    return "Thanks. A consultant will contact you shortly."
-
-
-def _parse_occupation(msg: str) -> str | None:
-    msg_lower = msg.lower().strip()
-    if msg_lower in {"1", "student"}:
-        return "Student"
-    if msg_lower in {"2", "graduate"}:
-        return "Graduate"
-    if msg_lower in {"3", "working professional", "professional", "working"}:
-        return "Working professional"
-    return None
-
 
 def _extract_int(text: str) -> int | None:
     match = re.search(r"(\d+)", text or "")
@@ -160,79 +91,175 @@ def _extract_availability_days(text: str) -> int | None:
     return _extract_int(text_lower)
 
 
-def _is_active_qualification_state(lead: dict[str, str]) -> bool:
-    state = (
+def _lead_score(data: dict[str, str]) -> int:
+    score = 0
+
+    # Years of experience
+    years = _extract_int(data.get("experience_years") or "")
+    if years is not None:
+        if years >= 3:
+            score += 3
+        elif years >= 1:
+            score += 1
+
+    # Funding path — company/HRDC shows commitment
+    funding = (data.get("funding_path") or data.get("who_will_pay") or "").strip().upper()
+    if any(f in funding for f in ("COMPANY", "EMPLOYER", "HRDC", "SPONSOR")):
+        score += 3
+    elif any(f in funding for f in ("SELF", "OWN", "PERSONAL")):
+        score += 1
+
+    # Relevant technologies mentioned
+    tech = (data.get("technologies") or "").lower()
+    if any(t in tech for t in ("selenium", "testing", "qa", "test", "playwright", "jmeter", "postman", "cypress", "appium")):
+        score += 2
+
+    # Availability
+    days = _extract_availability_days(data.get("availability") or "")
+    if days is not None and days <= 30:
+        score += 2
+
+    return score
+
+
+def _lead_status_from_score(score: int) -> str:
+    if score >= 7:
+        return "HOT"
+    if score >= 4:
+        return "WARM"
+    return "COLD"
+
+
+# --- Qualification question builders ---
+
+def _experience_years_prompt(lead: dict) -> str:
+    job_title = (lead.get("job_title") or "").strip()
+    company = (lead.get("company_name") or "").strip()
+    if job_title and company:
+        return f"Thanks for getting in touch! As a {job_title} at {company}, how many years of experience do you have in your field?"
+    if job_title:
+        return f"Thanks for getting in touch! As a {job_title}, how many years of experience do you have?"
+    return "Thanks for getting in touch! How many years of experience do you have in your current role?"
+
+
+def _technologies_prompt(lead: dict) -> str:
+    job_title = (lead.get("job_title") or "").strip()
+    if job_title:
+        return f"Which tools or technologies do you currently use as a {job_title}?"
+    return "Which tools or technologies do you currently use in your work?"
+
+
+def _motivation_prompt() -> str:
+    return "What prompted you to fill in our form? We'd love to understand what you're looking for."
+
+
+def _learning_goals_prompt() -> str:
+    return "What are you hoping to learn or achieve from this training?"
+
+
+def _funding_prompt() -> str:
+    return "Will your company be sponsoring this training, or are you planning to self-pay?\n1. Company / HRDC\n2. Self-pay"
+
+
+def _availability_prompt() -> str:
+    return "When are you available to start? For example: immediately, in 2 weeks, next month."
+
+
+def _final_qualification_reply() -> str:
+    return "Thank you! A consultant will be in touch with you shortly."
+
+
+# --- State helpers ---
+
+_ACTIVE_STATES = {
+    "ASKING_EXPERIENCE_YEARS",
+    "ASKING_TECHNOLOGIES",
+    "ASKING_MOTIVATION",
+    "ASKING_LEARNING_GOALS",
+    "ASKING_FUNDING_PATH",
+    "ASKING_AVAILABILITY",
+}
+
+
+def _get_state(lead: dict) -> str:
+    return (
         lead.get("conversation_state")
         or lead.get("qualification_step")
-        or lead.get("status")
         or ""
     ).strip().upper()
-    return state in {
-        "ASKING_OCCUPATION",
-        "ASKING_EXPERIENCE",
-        "ASKING_BUDGET",
-        "ASKING_AVAILABILITY",
+
+
+def _state_update(state: str, **extra) -> dict:
+    return {
+        "status": state,
+        "conversation_state": state,
+        "qualification_step": state,
+        **extra,
     }
 
 
 def _process_conversation(message: str, lead: dict[str, str]) -> tuple[str | None, dict[str, str | int] | None]:
     msg_lower = message.lower().strip()
-    state = (
-        lead.get("conversation_state")
-        or lead.get("qualification_step")
-        or lead.get("status")
-        or ""
-    ).strip().upper()
+    state = _get_state(lead)
 
-    if "interested" in msg_lower:
-        return _qualification_prompt(), {
-            "status": "ASKING_OCCUPATION",
-            "conversation_state": "ASKING_OCCUPATION",
-            "qualification_step": "ASKING_OCCUPATION",
-        }
+    # Trigger: any message containing "interested" starts qualification
+    if "interested" in msg_lower and state not in _ACTIVE_STATES:
+        return _experience_years_prompt(lead), _state_update("ASKING_EXPERIENCE_YEARS")
 
-    if not state:
+    if state not in _ACTIVE_STATES:
         return None, None
 
-    if state == "ASKING_OCCUPATION":
-        occupation = _parse_occupation(message)
-        if not occupation:
-            return "Please reply with 1, 2, or 3.", None
-        return _experience_prompt(), {
-            "status": "ASKING_EXPERIENCE",
-            "conversation_state": "ASKING_EXPERIENCE",
-            "qualification_step": "ASKING_EXPERIENCE",
-            "occupation": occupation,
-        }
+    if state == "ASKING_EXPERIENCE_YEARS":
+        years = message.strip()
+        if not years:
+            return "Could you share how many years of experience you have?", None
+        return _technologies_prompt(lead), _state_update("ASKING_TECHNOLOGIES", experience_years=years)
 
-    if state == "ASKING_EXPERIENCE":
-        if not (_is_yes(msg_lower) or _is_no(msg_lower)):
-            return "Please reply Yes or No.", None
-        experience = "Yes" if _is_yes(msg_lower) else "No"
-        return _budget_prompt(), {
-            "status": "ASKING_BUDGET",
-            "conversation_state": "ASKING_BUDGET",
-            "qualification_step": "ASKING_BUDGET",
-            "experience": experience,
-        }
+    if state == "ASKING_TECHNOLOGIES":
+        tech = message.strip()
+        if not tech:
+            return "Which tools or technologies do you currently use?", None
+        return _motivation_prompt(), _state_update("ASKING_MOTIVATION", technologies=tech)
 
-    if state == "ASKING_BUDGET":
-        budget = message.strip()
-        if not budget:
-            return "Please share your budget.", None
-        return _availability_prompt(), {
-            "status": "ASKING_AVAILABILITY",
-            "conversation_state": "ASKING_AVAILABILITY",
-            "qualification_step": "ASKING_AVAILABILITY",
-            "budget": budget,
-        }
+    if state == "ASKING_MOTIVATION":
+        motivation = message.strip()
+        if not motivation:
+            return "What brought you to us?", None
+        return _learning_goals_prompt(), _state_update("ASKING_LEARNING_GOALS", motivation=motivation)
+
+    if state == "ASKING_LEARNING_GOALS":
+        goals = message.strip()
+        if not goals:
+            return "What are you hoping to learn?", None
+        # Skip funding question if Meta already told us
+        who_pays = (lead.get("who_will_pay") or "").strip()
+        if who_pays:
+            funding_path = who_pays
+            return _availability_prompt(), _state_update(
+                "ASKING_AVAILABILITY",
+                learning_goals=goals,
+                funding_path=funding_path,
+            )
+        return _funding_prompt(), _state_update("ASKING_FUNDING_PATH", learning_goals=goals)
+
+    if state == "ASKING_FUNDING_PATH":
+        raw = message.strip()
+        if not raw:
+            return "Will your company sponsor this, or will you be self-paying?", None
+        msg_up = raw.upper()
+        if "1" in msg_up or any(w in msg_up for w in ("COMPANY", "HRDC", "EMPLOYER", "SPONSOR")):
+            funding_path = "Company/HRDC"
+        elif "2" in msg_up or any(w in msg_up for w in ("SELF", "OWN", "PERSONAL", "MYSELF")):
+            funding_path = "Self-pay"
+        else:
+            funding_path = raw
+        return _availability_prompt(), _state_update("ASKING_AVAILABILITY", funding_path=funding_path)
 
     if state == "ASKING_AVAILABILITY":
         availability = message.strip()
         if not availability:
-            return "Please share your availability.", None
-        lead_after = dict(lead)
-        lead_after["availability"] = availability
+            return "When are you available to start?", None
+        lead_after = {**lead, "availability": availability}
         score = _lead_score(lead_after)
         status = _lead_status_from_score(score)
         return _final_qualification_reply(), {
@@ -274,23 +301,23 @@ def _queue_human_handoff(
 
 
 def _hot_lead_summary(sender: str, lead: dict[str, str], updates: dict[str, str | int]) -> str:
-    name = (lead.get("name") or "").strip() or "Unknown"
-    occupation = str(updates.get("occupation") or lead.get("occupation") or "")
-    experience = str(updates.get("experience") or lead.get("experience") or "")
-    budget = str(updates.get("budget") or lead.get("budget") or "")
-    availability = str(updates.get("availability") or lead.get("availability") or "")
-    score = str(updates.get("lead_score") or lead.get("lead_score") or "")
+    def _v(key: str) -> str:
+        return str(updates.get(key) or lead.get(key) or "").strip()
 
     return (
-        "🔥 HOT LEAD\n\n"
-        f"Name: {name}\n"
+        "HOT LEAD\n\n"
+        f"Name: {_v('name') or 'Unknown'}\n"
         f"Phone: {sender}\n"
-        f"Occupation: {occupation}\n"
-        f"Experience: {experience}\n"
-        f"Budget: RM {budget}\n"
-        f"Availability: {availability}\n\n"
+        f"Job Title: {_v('job_title')}\n"
+        f"Company: {_v('company_name')}\n"
+        f"Experience: {_v('experience_years')} years\n"
+        f"Technologies: {_v('technologies')}\n"
+        f"Motivation: {_v('motivation')}\n"
+        f"Learning Goals: {_v('learning_goals')}\n"
+        f"Funding: {_v('funding_path') or _v('who_will_pay')}\n"
+        f"Availability: {_v('availability')}\n\n"
         "Recommendation: Call within 24 hours.\n"
-        f"Score: {score}"
+        f"Score: {_v('lead_score')}"
     )
 
 

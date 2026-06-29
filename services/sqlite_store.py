@@ -83,6 +83,17 @@ def init_db() -> None:
             ("ALTER TABLE leads ADD COLUMN budget TEXT", "budget"),
             ("ALTER TABLE leads ADD COLUMN availability TEXT", "availability"),
             ("ALTER TABLE leads ADD COLUMN lead_score INTEGER", "lead_score"),
+            # Meta Lead Ads fields (populated at outreach time)
+            ("ALTER TABLE leads ADD COLUMN job_title TEXT", "job_title"),
+            ("ALTER TABLE leads ADD COLUMN company_name TEXT", "company_name"),
+            ("ALTER TABLE leads ADD COLUMN who_will_pay TEXT", "who_will_pay"),
+            ("ALTER TABLE leads ADD COLUMN email TEXT", "email"),
+            # Qualification fields (populated during conversation)
+            ("ALTER TABLE leads ADD COLUMN experience_years TEXT", "experience_years"),
+            ("ALTER TABLE leads ADD COLUMN technologies TEXT", "technologies"),
+            ("ALTER TABLE leads ADD COLUMN motivation TEXT", "motivation"),
+            ("ALTER TABLE leads ADD COLUMN learning_goals TEXT", "learning_goals"),
+            ("ALTER TABLE leads ADD COLUMN funding_path TEXT", "funding_path"),
         ]:
             if column_name not in existing_columns:
                 conn.execute(column_sql)
@@ -122,6 +133,17 @@ def upsert_lead(
     budget: str | None = None,
     availability: str | None = None,
     lead_score: int | None = None,
+    # Meta Lead Ads fields
+    job_title: str | None = None,
+    company_name: str | None = None,
+    who_will_pay: str | None = None,
+    email: str | None = None,
+    # Qualification conversation fields
+    experience_years: str | None = None,
+    technologies: str | None = None,
+    motivation: str | None = None,
+    learning_goals: str | None = None,
+    funding_path: str | None = None,
 ) -> bool:
     phone = str(phone).strip()
     if not phone:
@@ -132,11 +154,15 @@ def upsert_lead(
         conn.execute(
             """
             INSERT INTO leads (
-                phone, name, course, status, conversation_state, qualification_step, last_intent, last_intent_reason,
-                needs_human, human_reason, human_status, human_updated_at, last_message, last_reply, assigned_to,
-                occupation, experience, budget, availability, lead_score, updated_at
+                phone, name, course, status, conversation_state, qualification_step,
+                last_intent, last_intent_reason, needs_human, human_reason, human_status,
+                human_updated_at, last_message, last_reply, assigned_to,
+                occupation, experience, budget, availability, lead_score,
+                job_title, company_name, who_will_pay, email,
+                experience_years, technologies, motivation, learning_goals, funding_path,
+                updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(phone) DO UPDATE SET
                 name = COALESCE(excluded.name, leads.name),
                 course = COALESCE(excluded.course, leads.course),
@@ -157,29 +183,24 @@ def upsert_lead(
                 budget = COALESCE(excluded.budget, leads.budget),
                 availability = COALESCE(excluded.availability, leads.availability),
                 lead_score = COALESCE(excluded.lead_score, leads.lead_score),
+                job_title = COALESCE(excluded.job_title, leads.job_title),
+                company_name = COALESCE(excluded.company_name, leads.company_name),
+                who_will_pay = COALESCE(excluded.who_will_pay, leads.who_will_pay),
+                email = COALESCE(excluded.email, leads.email),
+                experience_years = COALESCE(excluded.experience_years, leads.experience_years),
+                technologies = COALESCE(excluded.technologies, leads.technologies),
+                motivation = COALESCE(excluded.motivation, leads.motivation),
+                learning_goals = COALESCE(excluded.learning_goals, leads.learning_goals),
+                funding_path = COALESCE(excluded.funding_path, leads.funding_path),
                 updated_at = excluded.updated_at
             """,
             (
-                phone,
-                name,
-                course,
-                status,
-                conversation_state,
-                qualification_step,
-                last_intent,
-                last_intent_reason,
-                needs_human,
-                human_reason,
-                human_status,
-                human_updated_at,
-                last_message,
-                last_reply,
-                assigned_to,
-                occupation,
-                experience,
-                budget,
-                availability,
-                lead_score,
+                phone, name, course, status, conversation_state, qualification_step,
+                last_intent, last_intent_reason, needs_human, human_reason, human_status,
+                human_updated_at, last_message, last_reply, assigned_to,
+                occupation, experience, budget, availability, lead_score,
+                job_title, company_name, who_will_pay, email,
+                experience_years, technologies, motivation, learning_goals, funding_path,
                 _utc_now(),
             ),
         )
