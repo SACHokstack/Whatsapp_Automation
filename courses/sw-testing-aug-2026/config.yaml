@@ -1,0 +1,52 @@
+name: Modern Software Testing with AI-Assisted Automation & CI/CD Integration
+slug: sw-testing-aug-2026
+active: true
+
+dates: "17–20 August 2026"
+venue: "Ibis PJCC, Petaling Jaya"
+
+fees:
+  standard: 6000
+  group_2: 5700
+  group_3_plus: 5500
+
+hrdc_deadline: "12 August 2026"
+payment_deadline: "10 August 2026"
+
+hot_budget_threshold: 4000
+
+keywords:
+  - playwright
+  - typescript
+  - bdd
+  - cucumber
+  - ci/cd
+  - azure devops
+  - selenium
+  - page object
+  - api testing
+  - ui automation
+  - automation framework
+  - course content
+  - curriculum
+  - syllabus
+  - who should attend
+  - chatgpt
+  - github copilot
+  - copilot
+  - ai testing
+  - devops
+  - final project
+  - end to end
+  - software testing
+  - qa engineer
+  - test engineer
+  - automation engineer
+
+outreach:
+  worksheet_name: "SW Testing Aug"
+  template_name: "timmins_software_testing_intro"
+  template_language: "en"
+  name_column: "full_name"
+  phone_column: "phone"
+  status_column: "lead_status"

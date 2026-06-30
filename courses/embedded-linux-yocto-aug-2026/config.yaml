@@ -1,0 +1,45 @@
+name: "Embedded Linux with Yocto: Deep Foundation & Customization"
+slug: embedded-linux-yocto-aug-2026
+active: true
+
+dates: "10–14 August 2026"
+venue: "Timmins Training Center, Penang"
+
+fees:
+  standard: 7500
+  group_2: 7125
+  group_3_plus: 6900
+
+hrdc_deadline: "5 August 2026"
+payment_deadline: "4 August 2026"
+
+hot_budget_threshold: 5000
+
+keywords:
+  - yocto
+  - yocto project
+  - bitbake
+  - embedded linux
+  - linux build system
+  - custom linux
+  - recipe
+  - layer
+  - meta layer
+  - bsp layer
+  - sdk
+  - devtool
+  - poky
+  - openembedded
+  - linux image
+  - rootfs customization
+  - embedded firmware
+  - linux customization
+  - penang
+
+outreach:
+  worksheet_name: "Embedded Linux Yocto"
+  template_name: "timmins_embedded_linux_yocto_intro"
+  template_language: "en"
+  name_column: "full_name"
+  phone_column: "phone"
+  status_column: "lead_status"

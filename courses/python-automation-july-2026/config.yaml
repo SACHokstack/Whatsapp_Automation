@@ -1,0 +1,46 @@
+name: Python Automation for Engineers
+slug: python-automation-july-2026
+active: true
+
+dates: "29–31 July 2026"
+venue: "AC Hotel, Penang"
+
+fees:
+  standard: 4500
+  group_2: 4275
+  group_3_plus: 4140
+
+hrdc_deadline: "24 July 2026"
+payment_deadline: "22 July 2026"
+
+hot_budget_threshold: 3000
+
+keywords:
+  - python
+  - python automation
+  - scripting
+  - automation
+  - pandas
+  - numpy
+  - api automation
+  - rest api
+  - data processing
+  - file automation
+  - excel automation
+  - openpyxl
+  - requests
+  - web scraping
+  - task automation
+  - engineer automation
+  - industrial automation
+  - process automation
+  - python for engineers
+  - penang
+
+outreach:
+  worksheet_name: "Python Automation"
+  template_name: "timmins_python_automation_intro"
+  template_language: "en"
+  name_column: "full_name"
+  phone_column: "phone"
+  status_column: "lead_status"
