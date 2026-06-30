@@ -15,9 +15,18 @@ from services.whatsapp import send_template
 
 
 def normalize_phone(raw) -> str | None:
-    # Handles +60..., 60..., Excel scientific notation like 6.01234e+10
+    # Handles +60..., 60..., Excel float like 919444209374.0
     s = re.sub(r"[^\d]", "", str(raw).split(".")[0])
     return s if len(s) >= 10 else None
+
+
+def _clean(row: dict, *keys: str) -> str:
+    """Try each key in order, return first non-empty value. Handles 'who_will_pay?' variant."""
+    for key in keys:
+        val = str(row.get(key) or "").strip()
+        if val:
+            return val
+    return ""
 
 
 def main() -> None:
@@ -43,7 +52,7 @@ def main() -> None:
 
     rows = get_rows_from(course.worksheet_name)
 
-    # Only contact leads that are CREATED (or have no status yet)
+    # Pick up CREATED leads (or rows with no status yet)
     candidates = [
         r for r in rows
         if str(r.get(course.status_col, "")).strip().upper() in ("CREATED", "")
@@ -59,15 +68,23 @@ def main() -> None:
     for row in candidates:
         raw_phone = row.get(course.phone_col, "")
         phone = normalize_phone(raw_phone)
-        name = str(row.get(course.name_col, "") or "").strip() or "there"
+        name = _clean(row, course.name_col, "full_name", "name") or "there"
 
         if phone is None:
             print(f"  SKIP   invalid phone: {raw_phone!r}")
             skipped += 1
             continue
 
+        # Extract Meta Lead Ads fields — handle 'who_will_pay?' column name variant
+        job_title    = _clean(row, "job_title")
+        company_name = _clean(row, "company_name")
+        who_will_pay = _clean(row, "who_will_pay", "who_will_pay?")
+        email        = _clean(row, "email")
+
         if args.dry_run:
             print(f"  [DRY RUN] would send to {phone} ({name})")
+            if job_title:
+                print(f"            job_title={job_title!r}  company={company_name!r}  who_pays={who_will_pay!r}")
             sent += 1
             continue
 
@@ -79,8 +96,21 @@ def main() -> None:
         )
 
         if response.ok:
+            # Mark CONTACTED in the sheet tab
             update_lead_in(phone, course.worksheet_name, **{course.status_col: "CONTACTED"})
-            upsert_lead(phone, status="CONTACTED", course=course.slug, name=name)
+
+            # Upsert ALL Meta fields into SQLite so the bot has them when the lead replies
+            upsert_lead(
+                phone,
+                status="CONTACTED",
+                course=course.slug,
+                name=name,
+                job_title=job_title or None,
+                company_name=company_name or None,
+                who_will_pay=who_will_pay or None,
+                email=email or None,
+            )
+
             try:
                 msg_id = response.json().get("messages", [{}])[0].get("id")
             except Exception:
