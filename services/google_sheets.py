@@ -200,3 +200,59 @@ def update_lead_in(phone: str, worksheet_name: str, **kwargs) -> bool:
     if not updates:
         return False
     return _update_worksheet(ws, phone, updates)
+
+
+HOT_LEADS_TAB = "Hot Leads"
+
+# Ordered columns written to the Hot Leads tab — must match the tab's header row exactly
+_HOT_LEAD_COLUMNS = [
+    "timestamp",
+    "name",
+    "phone",
+    "course",
+    "job_title",
+    "company_name",
+    "experience_years",
+    "technologies",
+    "motivation",
+    "learning_goals",
+    "funding_path",
+    "availability",
+    "lead_score",
+    "status",
+    "assigned_to",
+]
+
+
+def append_hot_lead(phone: str, lead: dict, updates: dict) -> bool:
+    """Append a row to the Hot Leads tab when a lead scores HOT."""
+    from datetime import datetime, timezone
+
+    def _v(key: str) -> str:
+        return str(updates.get(key) or lead.get(key) or "").strip()
+
+    row = [
+        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        _v("name"),
+        phone,
+        _v("course"),
+        _v("job_title"),
+        _v("company_name"),
+        _v("experience_years"),
+        _v("technologies"),
+        _v("motivation"),
+        _v("learning_goals"),
+        _v("funding_path") or _v("who_will_pay"),
+        _v("availability"),
+        _v("lead_score"),
+        "HOT",
+        _v("assigned_to") or "Raj",
+    ]
+
+    try:
+        ws = get_worksheet(HOT_LEADS_TAB)
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        return True
+    except Exception as e:
+        print("HOT LEADS TAB ERROR:", e)
+        return False

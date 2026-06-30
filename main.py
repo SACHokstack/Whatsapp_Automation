@@ -10,7 +10,7 @@ from services.course_loader import detect_course, get_course
 from services.knowledge_base import topic_for_message
 from services.reply_cache import get as cache_get
 from services.reply_cache import set as cache_set
-from services.google_sheets import update_lead
+from services.google_sheets import update_lead, append_hot_lead
 from services.whatsapp import send_text
 from services.sqlite_store import (
     add_message,
@@ -429,7 +429,6 @@ def _handle_webhook_body(body: dict) -> None:
                     print("SHEET STATE UPDATED:", updated)
 
                     if str(state_updates.get("status") or "") == "HOT":
-                        hot_summary = _hot_lead_summary(sender, lead, state_updates)
                         _queue_human_handoff(
                             sender,
                             lead,
@@ -437,7 +436,9 @@ def _handle_webhook_body(body: dict) -> None:
                             source="hot_lead",
                             intent="HOT_LEAD",
                         )
-                        print("HOT LEAD QUEUED:", hot_summary)
+                        if ENABLE_GOOGLE_SHEETS:
+                            appended = append_hot_lead(sender, lead, state_updates)
+                            print("HOT LEAD → SHEET:", appended)
 
                 response = send_text(sender, reply_text)
                 print("AUTO REPLY STATUS:", response.status_code)
