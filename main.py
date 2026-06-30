@@ -138,37 +138,69 @@ def _experience_years_prompt(lead: dict) -> str:
     job_title = (lead.get("job_title") or "").strip()
     company = (lead.get("company_name") or "").strip()
     if job_title and company:
-        return f"Thanks for getting in touch! As a {job_title} at {company}, how many years of experience do you have in your field?"
+        return (
+            f"Great! As a {job_title} at {company}, how many years of experience do you have?\n\n"
+            f"e.g. 2 years, 5 years, less than 1 year"
+        )
     if job_title:
-        return f"Thanks for getting in touch! As a {job_title}, how many years of experience do you have?"
-    return "Thanks for getting in touch! How many years of experience do you have in your current role?"
+        return (
+            f"Great! As a {job_title}, how many years of experience do you have?\n\n"
+            f"e.g. 2 years, 5 years, less than 1 year"
+        )
+    return (
+        "Great! How many years of experience do you have in your current role?\n\n"
+        "e.g. 2 years, 5 years, less than 1 year"
+    )
 
 
 def _technologies_prompt(lead: dict) -> str:
     job_title = (lead.get("job_title") or "").strip()
     if job_title:
-        return f"Which tools or technologies do you currently use as a {job_title}?"
-    return "Which tools or technologies do you currently use in your work?"
+        return (
+            f"Which tools or technologies do you use as a {job_title}?\n\n"
+            f"e.g. Selenium, Jira, Postman, Python — just share whatever you use day to day"
+        )
+    return (
+        "Which tools or technologies do you use in your work?\n\n"
+        "e.g. Selenium, Jira, Postman, Python — just share whatever you use day to day"
+    )
 
 
 def _motivation_prompt() -> str:
-    return "What prompted you to fill in our form? We'd love to understand what you're looking for."
+    return (
+        "What prompted you to look into this training?\n\n"
+        "e.g. Want to upskill, company asked me to, exploring options, heard from a colleague — anything works!"
+    )
 
 
 def _learning_goals_prompt() -> str:
-    return "What are you hoping to learn or achieve from this training?"
+    return (
+        "What are you hoping to learn from this training?\n\n"
+        "e.g. Learn Playwright, move into automation, improve my testing skills, get certified"
+    )
 
 
 def _funding_prompt() -> str:
-    return "Will your company be sponsoring this training, or are you planning to self-pay?\n1. Company / HRDC\n2. Self-pay"
+    return (
+        "How are you planning to fund this training?\n\n"
+        "1. Company / HRDC — my employer is sponsoring\n"
+        "2. Self-pay — I am paying myself\n\n"
+        "Just reply 1 or 2, or type it out."
+    )
 
 
 def _availability_prompt() -> str:
-    return "When are you available to start? For example: immediately, in 2 weeks, next month."
+    return (
+        "Last one — when are you looking to start?\n\n"
+        "e.g. Immediately, next month, after Raya, in 2 weeks — whatever suits you!"
+    )
 
 
 def _final_qualification_reply() -> str:
-    return "Thank you! A consultant will be in touch with you shortly."
+    return (
+        "Thank you for sharing that! Our consultant will review your profile and reach out to you shortly.\n\n"
+        "In the meantime, feel free to ask me anything about the course, fees, or schedule."
+    )
 
 
 _GREETING_WORDS = {
