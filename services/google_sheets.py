@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -42,10 +43,13 @@ def _credentials_file() -> str:
 
 @lru_cache(maxsize=1)
 def get_client() -> gspread.Client:
-    creds = Credentials.from_service_account_file(
-        _credentials_file(),
-        scopes=SCOPES,
-    )
+    # Prefer inline JSON env var (for cloud deployments where file can't be uploaded)
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+    if creds_json:
+        info = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+    else:
+        creds = Credentials.from_service_account_file(_credentials_file(), scopes=SCOPES)
     return gspread.authorize(creds)
 
 
