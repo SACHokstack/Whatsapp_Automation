@@ -12,6 +12,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 DEFAULT_SHEET_NAME = "Lead _ SW Testing July 2026 Intake"
 DEFAULT_WORKSHEET_NAME = "Sheet1"
 DEFAULT_CREDENTIALS_FILE = "credentials.json"
+LEADS_WORKBOOK = os.getenv("TIMMINS_LEADS_WORKBOOK", "Timmins Leads")
 
 
 @dataclass(slots=True)
@@ -155,3 +156,48 @@ def update_lead(
 def print_rows() -> None:
     rows = get_rows()
     print(rows)
+
+
+# --- Multi-course workbook helpers (outreach runner) ---
+
+def get_worksheet(worksheet_name: str):
+    """Open a named tab from the Timmins Leads workbook."""
+    return get_client().open(LEADS_WORKBOOK).worksheet(worksheet_name)
+
+
+def get_rows_from(worksheet_name: str) -> list[dict]:
+    return get_worksheet(worksheet_name).get_all_records()
+
+
+def _update_worksheet(ws, phone: str, updates: list[tuple[str, str]]) -> bool:
+    """Write column updates for a phone number into any worksheet."""
+    records = ws.get_all_records()
+    headers = ws.row_values(1)
+    phone_digits = _normalize_phone(phone)
+
+    row_number: int | None = None
+    for index, record in enumerate(records, start=2):
+        if _normalize_phone(record.get("phone", "")) == phone_digits:
+            row_number = index
+            break
+
+    if row_number is None:
+        return False
+
+    for column_name, value in updates:
+        try:
+            col_index = headers.index(column_name) + 1
+        except ValueError:
+            continue
+        ws.update_cell(row_number, col_index, value)
+
+    return True
+
+
+def update_lead_in(phone: str, worksheet_name: str, **kwargs) -> bool:
+    """Update a lead's columns in a specific course tab of the Timmins Leads workbook."""
+    ws = get_worksheet(worksheet_name)
+    updates = [(k, str(v)) for k, v in kwargs.items() if v is not None]
+    if not updates:
+        return False
+    return _update_worksheet(ws, phone, updates)

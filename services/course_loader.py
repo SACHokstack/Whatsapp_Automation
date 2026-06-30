@@ -24,6 +24,31 @@ class CourseConfig:
     hot_budget_threshold: int
     keywords: list[str]
     overview: str
+    outreach: dict = field(default_factory=dict)
+
+    @property
+    def worksheet_name(self) -> str:
+        return self.outreach.get("worksheet_name", self.name)
+
+    @property
+    def outreach_template(self) -> str:
+        return self.outreach.get("template_name", "")
+
+    @property
+    def outreach_language(self) -> str:
+        return self.outreach.get("template_language", "en_US")
+
+    @property
+    def name_col(self) -> str:
+        return self.outreach.get("name_column", "full_name")
+
+    @property
+    def phone_col(self) -> str:
+        return self.outreach.get("phone_column", "phone")
+
+    @property
+    def status_col(self) -> str:
+        return self.outreach.get("status_column", "lead_status")
 
 
 def _strip_notes(text: str) -> str:
@@ -59,6 +84,7 @@ def load_courses() -> dict[str, CourseConfig]:
             hot_budget_threshold=int(data.get("hot_budget_threshold", 4000)),
             keywords=[str(k).lower() for k in (data.get("keywords") or [])],
             overview=overview,
+            outreach=data.get("outreach") or {},
         )
 
     return courses

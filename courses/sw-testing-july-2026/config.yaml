@@ -42,3 +42,11 @@ keywords:
   - qa engineer
   - test engineer
   - automation engineer
+
+outreach:
+  worksheet_name: "Software Testing"
+  template_name: "timmins_software_testing_intro"
+  template_language: "en"
+  name_column: "full_name"
+  phone_column: "phone"
+  status_column: "lead_status"
