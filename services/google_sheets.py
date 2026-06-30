@@ -216,6 +216,31 @@ def update_lead_in(phone: str, worksheet_name: str, **kwargs) -> bool:
     return _update_worksheet(ws, phone, updates)
 
 
+def find_phone_in_workbook(phone: str) -> str | None:
+    """Search all tabs in the Timmins Leads workbook for a phone number.
+    Returns the worksheet (tab) name where the phone was found, or None."""
+    phone_digits = _normalize_phone(phone)
+    if not phone_digits:
+        return None
+    try:
+        workbook = get_client().open(LEADS_WORKBOOK)
+        for ws in workbook.worksheets():
+            if ws.title == HOT_LEADS_TAB:
+                continue
+            try:
+                records = ws.get_all_records()
+                for record in records:
+                    row_phone = _normalize_phone(str(record.get("phone", "") or record.get("phone ", "")))
+                    if row_phone == phone_digits:
+                        print(f"SHEET LOOKUP: found {phone_digits} in tab '{ws.title}'")
+                        return ws.title
+            except Exception:
+                continue
+    except Exception as e:
+        print("SHEET LOOKUP ERROR:", e)
+    return None
+
+
 HOT_LEADS_TAB = "Hot Leads"
 
 # Ordered columns written to the Hot Leads tab — must match the tab's header row exactly

@@ -10,7 +10,7 @@ from services.course_loader import detect_course, get_course
 from services.knowledge_base import topic_for_message
 from services.reply_cache import get as cache_get
 from services.reply_cache import set as cache_set
-from services.google_sheets import update_lead, update_lead_in, append_hot_lead
+from services.google_sheets import update_lead, update_lead_in, append_hot_lead, find_phone_in_workbook
 from services.whatsapp import send_text
 from services.sqlite_store import (
     add_message,
@@ -80,14 +80,16 @@ def _update_sheet_if_enabled(phone: str, worksheet_name: str | None = None, **kw
     if not sheet_kwargs:
         return False
 
+    if not worksheet_name:
+        print("SHEET SKIPPED: no worksheet_name resolved for", phone)
+        return False
+
     try:
-        if worksheet_name:
-            return update_lead_in(phone, worksheet_name, **sheet_kwargs)
-        # update_lead() uses positional kwargs — remap lead_status back to status
-        legacy_kwargs = {("status" if k == "lead_status" else k): v for k, v in sheet_kwargs.items()}
-        return update_lead(phone, **legacy_kwargs)
+        result = update_lead_in(phone, worksheet_name, **sheet_kwargs)
+        print(f"SHEET WRITE: tab='{worksheet_name}' phone={phone} keys={list(sheet_kwargs.keys())} result={result}")
+        return result
     except Exception as sheet_error:
-        print("SHEET ERROR:", sheet_error)
+        print(f"SHEET ERROR: tab='{worksheet_name}' error={sheet_error!r}")
         return False
 
 
@@ -482,10 +484,25 @@ def _handle_webhook_body(body: dict) -> None:
                 )
                 lead = get_lead(sender) or {}
                 course = _resolve_course(lead, msg)
+
+                # If course still unknown, look up the phone in the Google Sheet
+                # This handles leads contacted via outreach on a different machine
+                # whose course wasn't written to this server's SQLite.
+                if course is None and ENABLE_GOOGLE_SHEETS and not lead.get("course"):
+                    sheet_tab = find_phone_in_workbook(sender)
+                    if sheet_tab:
+                        from services.course_loader import load_courses
+                        for slug, c in load_courses().items():
+                            if c.worksheet_name == sheet_tab:
+                                course = c
+                                break
+
                 if course and not lead.get("course"):
                     upsert_lead(sender, course=course.slug)
+                    lead = {**lead, "course": course.slug}
 
                 worksheet = getattr(course, "worksheet_name", None)
+                print(f"COURSE RESOLVED: slug={getattr(course,'slug','None')} worksheet={worksheet}")
                 human_reason = _human_escalation_reason(msg.lower())
                 if human_reason:
                     _queue_human_handoff(sender, lead, reason=human_reason, source="keyword", worksheet_name=worksheet)
