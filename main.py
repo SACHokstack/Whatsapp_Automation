@@ -51,6 +51,11 @@ def _resolve_course(lead: dict, msg: str):
     slug = lead.get("course") or ""
     if slug:
         return get_course(slug)
+    # During active qualification the lead's answers (e.g. "python") would
+    # incorrectly match a different course keyword — skip detection.
+    state = (lead.get("conversation_state") or lead.get("qualification_step") or "").strip().upper()
+    if state in _ACTIVE_STATES:
+        return None
     course = detect_course(msg)
     return course
 
@@ -78,7 +83,9 @@ def _update_sheet_if_enabled(phone: str, worksheet_name: str | None = None, **kw
     try:
         if worksheet_name:
             return update_lead_in(phone, worksheet_name, **sheet_kwargs)
-        return update_lead(phone, **sheet_kwargs)
+        # update_lead() uses positional kwargs — remap lead_status back to status
+        legacy_kwargs = {("status" if k == "lead_status" else k): v for k, v in sheet_kwargs.items()}
+        return update_lead(phone, **legacy_kwargs)
     except Exception as sheet_error:
         print("SHEET ERROR:", sheet_error)
         return False
