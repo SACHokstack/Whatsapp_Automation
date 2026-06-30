@@ -367,6 +367,7 @@ def _queue_human_handoff(
     reason: str,
     source: str,
     intent: str = "",
+    worksheet_name: str | None = None,
 ) -> None:
     queue_updates = {
         "status": "NEEDS_HUMAN",
@@ -383,7 +384,7 @@ def _queue_human_handoff(
 
     local_updated = upsert_lead(sender, **queue_updates)
     print(f"LOCAL HUMAN QUEUE UPDATED ({source}):", local_updated)
-    updated = _update_sheet_if_enabled(sender, **queue_updates)
+    updated = _update_sheet_if_enabled(sender, worksheet_name=worksheet_name, **queue_updates)
     print(f"SHEET HUMAN QUEUE UPDATED ({source}):", updated)
 
 
@@ -484,9 +485,10 @@ def _handle_webhook_body(body: dict) -> None:
                 if course and not lead.get("course"):
                     upsert_lead(sender, course=course.slug)
 
+                worksheet = getattr(course, "worksheet_name", None)
                 human_reason = _human_escalation_reason(msg.lower())
                 if human_reason:
-                    _queue_human_handoff(sender, lead, reason=human_reason, source="keyword")
+                    _queue_human_handoff(sender, lead, reason=human_reason, source="keyword", worksheet_name=worksheet)
 
                     customer_reply = (
                         "Thanks. A consultant will contact you shortly regarding that request."
@@ -502,7 +504,6 @@ def _handle_webhook_body(body: dict) -> None:
                     )
                     return
 
-                worksheet = getattr(course, "worksheet_name", None)
                 reply_text, state_updates = _process_conversation(msg, lead, course=course)
                 if reply_text is None:
                     reply_text = _faq_reply(msg, course=course)
@@ -523,6 +524,7 @@ def _handle_webhook_body(body: dict) -> None:
                             reason=f"HOT lead score {state_updates.get('lead_score')}",
                             source="hot_lead",
                             intent="HOT_LEAD",
+                            worksheet_name=worksheet,
                         )
                         if ENABLE_GOOGLE_SHEETS:
                             appended = append_hot_lead(sender, lead, state_updates)
@@ -542,6 +544,7 @@ def _handle_webhook_body(body: dict) -> None:
                 print("LOCAL UPDATED AFTER REPLY:", local_updated)
                 updated = _update_sheet_if_enabled(
                     sender,
+                    worksheet_name=worksheet,
                     last_intent=topic_label,
                     last_intent_reason=topic_reason,
                     last_message=reply_text,

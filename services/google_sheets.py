@@ -182,8 +182,10 @@ def get_rows_from(worksheet_name: str) -> list[dict]:
 
 def _update_worksheet(ws, phone: str, updates: list[tuple[str, str]]) -> bool:
     """Write column updates for a phone number into any worksheet."""
-    records = ws.get_all_records()
-    headers = ws.row_values(1)
+    raw_records = ws.get_all_records()
+    # Strip trailing spaces from header keys (Google Sheets often exports "phone ")
+    records = [{k.strip(): v for k, v in r.items()} for r in raw_records]
+    headers = [h.strip() for h in ws.row_values(1)]
     phone_digits = _normalize_phone(phone)
 
     row_number: int | None = None
