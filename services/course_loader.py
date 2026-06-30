@@ -114,7 +114,7 @@ def detect_course(message: str) -> CourseConfig | None:
             best_score = score
             best = course
 
-    return best or active[0]
+    return best  # None if no keywords matched — caller must handle
 
 
 def course_context_text(course: CourseConfig) -> str:

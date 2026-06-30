@@ -55,15 +55,30 @@ def _resolve_course(lead: dict, msg: str):
     return course
 
 
+_SHEET_STATUS_VALUES = {"HOT", "WARM", "COLD", "CONTACTED", "ENGAGED", "NEEDS_HUMAN"}
+
 def _update_sheet_if_enabled(phone: str, worksheet_name: str | None = None, **kwargs) -> bool:
     if not ENABLE_GOOGLE_SHEETS:
         print("SHEET SKIPPED: disabled by ENABLE_GOOGLE_SHEETS")
         return False
 
+    # Map internal 'status' key to sheet's 'lead_status' column.
+    # Only write meaningful status values — skip conversation state names.
+    sheet_kwargs = {}
+    for k, v in kwargs.items():
+        if k == "status":
+            if str(v).upper() in _SHEET_STATUS_VALUES:
+                sheet_kwargs["lead_status"] = v
+        elif k not in ("conversation_state", "qualification_step"):
+            sheet_kwargs[k] = v
+
+    if not sheet_kwargs:
+        return False
+
     try:
         if worksheet_name:
-            return update_lead_in(phone, worksheet_name, **kwargs)
-        return update_lead(phone, **kwargs)
+            return update_lead_in(phone, worksheet_name, **sheet_kwargs)
+        return update_lead(phone, **sheet_kwargs)
     except Exception as sheet_error:
         print("SHEET ERROR:", sheet_error)
         return False
