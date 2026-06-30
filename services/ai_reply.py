@@ -3,21 +3,29 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from groq import Groq
+from groq import Groq, RateLimitError
 
 from services.knowledge_base import build_rag_context
 
 if TYPE_CHECKING:
     from services.course_loader import CourseConfig
 
-_client: Groq | None = None
 
-
-def _get_client() -> Groq:
-    global _client
-    if _client is None:
-        _client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    return _client
+def _load_api_keys() -> list[str]:
+    keys = []
+    # Primary key
+    primary = os.getenv("GROQ_API_KEY", "")
+    if primary:
+        keys.append(primary)
+    # Fallback keys: GROQ_API_KEY_2, GROQ_API_KEY_3, ...
+    i = 2
+    while True:
+        key = os.getenv(f"GROQ_API_KEY_{i}", "")
+        if not key:
+            break
+        keys.append(key)
+        i += 1
+    return keys
 
 
 _SYSTEM_PROMPT = """You are a helpful WhatsApp assistant for Timmins Training & Consulting, a Malaysia-based corporate training company.
@@ -34,24 +42,38 @@ Rules:
 _DEFAULT_REPLY = "Thank you for your interest. A consultant will contact you shortly."
 
 
-def ai_reply(message: str, course: CourseConfig | None = None) -> str:
+def ai_reply(message: str, course=None) -> str:
     context = build_rag_context(message, course)
     if not context:
         return _DEFAULT_REPLY
 
-    try:
-        response = _get_client().chat.completions.create(
-            model="llama-3.1-8b-instant",
-            max_tokens=300,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Knowledge base:\n{context}\n\nCustomer message: {message}",
-                },
-            ],
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print("AI_REPLY ERROR:", e)
+    keys = _load_api_keys()
+    if not keys:
+        print("AI_REPLY ERROR: no GROQ_API_KEY configured")
         return _DEFAULT_REPLY
+
+    for i, key in enumerate(keys):
+        try:
+            client = Groq(api_key=key)
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                max_tokens=300,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"Knowledge base:\n{context}\n\nCustomer message: {message}",
+                    },
+                ],
+            )
+            return response.choices[0].message.content.strip()
+        except RateLimitError:
+            label = "primary" if i == 0 else f"key_{i + 1}"
+            print(f"AI_REPLY RATE LIMITED on {label}, trying next key...")
+            continue
+        except Exception as e:
+            print("AI_REPLY ERROR:", e)
+            return _DEFAULT_REPLY
+
+    print("AI_REPLY ERROR: all API keys rate limited")
+    return _DEFAULT_REPLY

@@ -100,6 +100,17 @@ def update_lead(
     budget: str | None = None,
     availability: str | None = None,
     lead_score: int | None = None,
+    # Meta Lead Ads fields
+    job_title: str | None = None,
+    company_name: str | None = None,
+    who_will_pay: str | None = None,
+    email: str | None = None,
+    # Qualification conversation fields
+    experience_years: str | None = None,
+    technologies: str | None = None,
+    motivation: str | None = None,
+    learning_goals: str | None = None,
+    funding_path: str | None = None,
 ) -> bool:
     sheet = get_sheet()
     row = find_row_by_phone(phone)
@@ -107,50 +118,38 @@ def update_lead(
         return False
 
     updates: list[tuple[str, str]] = []
-    if status is not None:
-        updates.append(("status", status))
-    if conversation_state is not None:
-        updates.append(("conversation_state", conversation_state))
-    if qualification_step is not None:
-        updates.append(("qualification_step", qualification_step))
-    if last_intent is not None:
-        updates.append(("last_intent", last_intent))
-    if last_intent_reason is not None:
-        updates.append(("last_intent_reason", last_intent_reason))
-    if needs_human is not None:
-        updates.append(("needs_human", needs_human))
-    if human_reason is not None:
-        updates.append(("human_reason", human_reason))
-    if human_status is not None:
-        updates.append(("human_status", human_status))
-    if human_updated_at is not None:
-        updates.append(("human_updated_at", human_updated_at))
-    if last_message is not None:
-        updates.append(("last_message", last_message))
-    if last_reply is not None:
-        updates.append(("last_reply", last_reply))
-    if assigned_to is not None:
-        updates.append(("assigned_to", assigned_to))
-    if occupation is not None:
-        updates.append(("occupation", occupation))
-    if experience is not None:
-        updates.append(("experience", experience))
-    if budget is not None:
-        updates.append(("budget", budget))
-    if availability is not None:
-        updates.append(("availability", availability))
-    if lead_score is not None:
-        updates.append(("lead_score", str(lead_score)))
+    for col, val in [
+        ("status", status),
+        ("conversation_state", conversation_state),
+        ("qualification_step", qualification_step),
+        ("last_intent", last_intent),
+        ("last_intent_reason", last_intent_reason),
+        ("needs_human", needs_human),
+        ("human_reason", human_reason),
+        ("human_status", human_status),
+        ("human_updated_at", human_updated_at),
+        ("last_message", last_message),
+        ("last_reply", last_reply),
+        ("assigned_to", assigned_to),
+        ("occupation", occupation),
+        ("experience", experience),
+        ("budget", budget),
+        ("availability", availability),
+        ("lead_score", str(lead_score) if lead_score is not None else None),
+        ("job_title", job_title),
+        ("company_name", company_name),
+        ("who_will_pay", who_will_pay),
+        ("email", email),
+        ("experience_years", experience_years),
+        ("technologies", technologies),
+        ("motivation", motivation),
+        ("learning_goals", learning_goals),
+        ("funding_path", funding_path),
+    ]:
+        if val is not None:
+            updates.append((col, val))
 
-    headers = sheet.row_values(1)
-    for column_name, value in updates:
-        try:
-            col_index = headers.index(column_name) + 1
-        except ValueError:
-            continue
-        sheet.update_cell(row.row_number, col_index, value)
-
-    return True
+    return _update_worksheet(sheet, phone, updates)
 
 
 def print_rows() -> None:
