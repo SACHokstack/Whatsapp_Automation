@@ -10,7 +10,7 @@ from services.course_loader import detect_course, get_course
 from services.knowledge_base import topic_for_message
 from services.reply_cache import get as cache_get
 from services.reply_cache import set as cache_set
-from services.google_sheets import update_lead, append_hot_lead
+from services.google_sheets import update_lead, update_lead_in, append_hot_lead
 from services.whatsapp import send_text
 from services.sqlite_store import (
     add_message,
@@ -55,12 +55,14 @@ def _resolve_course(lead: dict, msg: str):
     return course
 
 
-def _update_sheet_if_enabled(phone: str, **kwargs) -> bool:
+def _update_sheet_if_enabled(phone: str, worksheet_name: str | None = None, **kwargs) -> bool:
     if not ENABLE_GOOGLE_SHEETS:
         print("SHEET SKIPPED: disabled by ENABLE_GOOGLE_SHEETS")
         return False
 
     try:
+        if worksheet_name:
+            return update_lead_in(phone, worksheet_name, **kwargs)
         return update_lead(phone, **kwargs)
     except Exception as sheet_error:
         print("SHEET ERROR:", sheet_error)
@@ -169,6 +171,28 @@ def _final_qualification_reply() -> str:
     return "Thank you! A consultant will be in touch with you shortly."
 
 
+_GREETING_WORDS = {
+    "hi", "hello", "hey", "hiya", "helo", "hai",
+    "good morning", "good afternoon", "good evening",
+    "thanks", "thank you", "ok", "okay", "noted",
+}
+
+def _is_greeting(msg: str) -> bool:
+    return msg.strip().lower() in _GREETING_WORDS
+
+
+def _first_contact_greeting(lead: dict, course) -> str:
+    first_name = (lead.get("name") or "").strip().split()[0] if lead.get("name") else ""
+    greeting = f"Hi {first_name}! " if first_name else "Hi! "
+    course_name = getattr(course, "name", "our upcoming training program") if course else "our upcoming training program"
+    return (
+        f"{greeting}Thanks for getting back to us.\n\n"
+        f"I'm Timmins' assistant for *{course_name}*.\n\n"
+        f"I can help you with course details, fees, schedule, HRDC, and more — just ask me anything.\n\n"
+        f"Or reply *Interested* and I'll ask you a few quick questions so our consultant can follow up with the right information for you."
+    )
+
+
 # --- State helpers ---
 
 _ACTIVE_STATES = {
@@ -198,12 +222,21 @@ def _state_update(state: str, **extra) -> dict:
     }
 
 
-def _process_conversation(message: str, lead: dict[str, str]) -> tuple[str | None, dict[str, str | int] | None]:
+def _process_conversation(message: str, lead: dict[str, str], course=None) -> tuple[str | None, dict[str, str | int] | None]:
     msg_lower = message.lower().strip()
     state = _get_state(lead)
+    lead_status = (lead.get("status") or "").upper()
 
-    # Trigger: any message containing "interested" starts qualification
-    if "interested" in msg_lower and state not in _ACTIVE_STATES:
+    # First reply after outreach template — send warm greeting with CTA
+    if state not in _ACTIVE_STATES and lead_status == "CONTACTED" and not ("interested" in msg_lower or "yes" in msg_lower):
+        return _first_contact_greeting(lead, course), {"status": "ENGAGED"}
+
+    # Pure greeting when not in active qualification — also greet
+    if _is_greeting(message) and state not in _ACTIVE_STATES:
+        return _first_contact_greeting(lead, course), None
+
+    # Trigger: "interested" or "yes" starts qualification
+    if ("interested" in msg_lower or msg_lower == "yes") and state not in _ACTIVE_STATES:
         return _experience_years_prompt(lead), _state_update("ASKING_EXPERIENCE_YEARS")
 
     if state not in _ACTIVE_STATES:
@@ -415,7 +448,8 @@ def _handle_webhook_body(body: dict) -> None:
                     )
                     return
 
-                reply_text, state_updates = _process_conversation(msg, lead)
+                worksheet = getattr(course, "worksheet_name", None)
+                reply_text, state_updates = _process_conversation(msg, lead, course=course)
                 if reply_text is None:
                     reply_text = _faq_reply(msg, course=course)
                     state_updates = None
@@ -425,7 +459,7 @@ def _handle_webhook_body(body: dict) -> None:
                 if state_updates:
                     local_updated = upsert_lead(sender, **state_updates)
                     print("LOCAL STATE UPDATED:", local_updated)
-                    updated = _update_sheet_if_enabled(sender, **state_updates)
+                    updated = _update_sheet_if_enabled(sender, worksheet_name=worksheet, **state_updates)
                     print("SHEET STATE UPDATED:", updated)
 
                     if str(state_updates.get("status") or "") == "HOT":

@@ -8,7 +8,10 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
 DEFAULT_SHEET_NAME = "Lead _ SW Testing July 2026 Intake"
 DEFAULT_WORKSHEET_NAME = "Sheet1"
 DEFAULT_CREDENTIALS_FILE = "credentials.json"
@@ -165,7 +168,12 @@ def get_worksheet(worksheet_name: str):
 
 
 def get_rows_from(worksheet_name: str) -> list[dict]:
-    return get_worksheet(worksheet_name).get_all_records()
+    rows = get_worksheet(worksheet_name).get_all_records()
+    # Strip whitespace from header keys and string values (Google Sheets often has trailing spaces)
+    return [
+        {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in row.items()}
+        for row in rows
+    ]
 
 
 def _update_worksheet(ws, phone: str, updates: list[tuple[str, str]]) -> bool:
