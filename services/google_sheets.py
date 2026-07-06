@@ -166,13 +166,14 @@ def print_rows() -> None:
 
 # --- Multi-course workbook helpers (outreach runner) ---
 
-def get_worksheet(worksheet_name: str):
-    """Open a named tab from the Timmins Leads workbook."""
-    return get_client().open(LEADS_WORKBOOK).worksheet(worksheet_name)
+def get_worksheet(worksheet_name: str, workbook_name: str | None = None):
+    """Open a named tab from the Timmins Leads workbook (or any named workbook)."""
+    wb = workbook_name or LEADS_WORKBOOK
+    return get_client().open(wb).worksheet(worksheet_name)
 
 
-def get_rows_from(worksheet_name: str) -> list[dict]:
-    rows = get_worksheet(worksheet_name).get_all_records()
+def get_rows_from(worksheet_name: str, workbook_name: str | None = None) -> list[dict]:
+    rows = get_worksheet(worksheet_name, workbook_name).get_all_records()
     # Strip whitespace from header keys and string values (Google Sheets often has trailing spaces)
     return [
         {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in row.items()}
@@ -190,7 +191,11 @@ def _update_worksheet(ws, phone: str, updates: list[tuple[str, str]]) -> bool:
 
     row_number: int | None = None
     for index, record in enumerate(records, start=2):
-        if _normalize_phone(record.get("phone", "")) == phone_digits:
+        # Check both 'phone' and 'whatsapp_number' columns
+        row_phone = _normalize_phone(
+            record.get("phone") or record.get("whatsapp_number", "")
+        )
+        if row_phone == phone_digits:
             row_number = index
             break
 
@@ -207,9 +212,9 @@ def _update_worksheet(ws, phone: str, updates: list[tuple[str, str]]) -> bool:
     return True
 
 
-def update_lead_in(phone: str, worksheet_name: str, **kwargs) -> bool:
-    """Update a lead's columns in a specific course tab of the Timmins Leads workbook."""
-    ws = get_worksheet(worksheet_name)
+def update_lead_in(phone: str, worksheet_name: str, workbook_name: str | None = None, **kwargs) -> bool:
+    """Update a lead's columns in a specific worksheet tab."""
+    ws = get_worksheet(worksheet_name, workbook_name)
     updates = [(k, str(v)) for k, v in kwargs.items() if v is not None]
     if not updates:
         return False
@@ -230,7 +235,9 @@ def find_phone_in_workbook(phone: str) -> str | None:
             try:
                 records = ws.get_all_records()
                 for record in records:
-                    row_phone = _normalize_phone(str(record.get("phone", "") or record.get("phone ", "")))
+                    row_phone = _normalize_phone(str(
+                        record.get("phone") or record.get("phone ") or record.get("whatsapp_number", "")
+                    ))
                     if row_phone == phone_digits:
                         print(f"SHEET LOOKUP: found {phone_digits} in tab '{ws.title}'")
                         return ws.title
