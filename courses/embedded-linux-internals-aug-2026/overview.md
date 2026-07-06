@@ -64,3 +64,187 @@ Practical outcomes:
 - Debug kernel-level issues using professional Linux tools
 
 Investment: RM 7,800 per participant. Group discount available for minimum 3 pax. 100% HRDC claimable.
+
+Below is a knowledge base in the same style as your Software Testing Knowledge Base, optimized for your WhatsApp AI assistant. It is written so it can be plugged directly into your Layer 3 (Course Knowledge Base).
+SECTION X – EMBEDDED LINUX SYSTEM INTERNALS KNOWLEDGE BASE
+Q1. What is this course about?
+Answer:
+Embedded Linux System Internals is a 5-day hands-on training that teaches engineers how Embedded Linux works internally—from board boot-up to bootloader, kernel, root filesystem, device drivers, synchronization, interrupts, DMA, and kernel debugging.
+Participants learn not only how Linux applications run, but also how Linux itself is built, customized, and debugged on embedded hardware using the BeagleBone Black platform.
+Q2. Who should attend?
+Answer:
+This course is suitable for:
+Embedded Software Engineers
+Embedded Linux Engineers
+Firmware Engineers
+BSP Engineers
+Device Driver Developers
+Linux Platform Engineers
+Software Engineers working on embedded products
+Engineers transitioning from RTOS to Embedded Linux
+Q3. Is this suitable for beginners?
+Answer:
+This course is suitable for engineers who already have basic programming experience in C or C++ and basic Linux knowledge.
+It starts from Linux boot fundamentals before progressing into advanced kernel and driver development.
+Q4. What are the prerequisites?
+Answer:
+Participants should have:
+Basic C or C++ programming knowledge
+Basic Linux command-line knowledge
+Basic understanding of embedded systems
+Prior Linux kernel or driver development experience is not required.
+Q5. What hardware platform is used?
+Answer:
+Hands-on exercises are performed using the BeagleBone Black embedded development board to provide practical experience with real hardware.
+Q6. Will Buildroot be covered?
+Answer:
+Yes.
+Participants will learn:
+Buildroot architecture
+Buildroot configuration
+Building Linux images
+Root filesystem generation
+Kernel generation
+U-Boot generation
+Package customization
+Q7. Will U-Boot be covered?
+Answer:
+Yes.
+The course covers:
+Bootloader fundamentals
+U-Boot architecture
+Boot stages
+Custom bootloader commands
+Bootloader customization
+Q8. Will Linux Kernel configuration be covered?
+Answer:
+Yes.
+Participants learn how to:
+Configure the Linux kernel
+Build the Linux kernel
+Configure boot parameters
+Boot custom kernels
+Create ramdisk images
+Q9. Will Linux Device Drivers be covered?
+Answer:
+Yes.
+The course includes:
+Character Drivers
+Platform Drivers
+Device registration
+Driver registration
+IOCTL
+Linux Driver Model
+Q10. Will Device Tree (DTB) be covered?
+Answer:
+Yes.
+Participants learn how Device Tree integrates hardware with Linux drivers, including creating and modifying Device Tree Blob (DTB) entries.
+Q11. Will Interrupt Handling be covered?
+Answer:
+Yes.
+Topics include:
+IRQ registration
+Top-half and bottom-half handling
+SoftIRQ
+Tasklets
+Work Queues
+Q12. Will Synchronization be covered?
+Answer:
+Yes.
+Participants will work with:
+Mutex
+Semaphore
+Spinlocks
+Atomic Operations
+using practical driver development exercises.
+Q13. Will DMA be covered?
+Answer:
+Yes.
+The course introduces:
+Linux DMA Engine
+DMA Controllers
+DMA APIs
+DMA transfers
+Driver integration with DMA
+Q14. Will Kernel Debugging be covered?
+Answer:
+Yes.
+Participants learn practical debugging techniques using:
+printk
+Dynamic Debug
+DebugFS
+KGDB
+Kprobes
+Kretprobes
+Ftrace
+Oops Analysis
+Q15. Is this a hands-on course?
+Answer:
+Yes.
+Every major topic includes practical laboratory exercises performed on real embedded hardware rather than simulations.
+Q16. What tools will be used?
+Answer:
+Participants will work with:
+Linux
+U-Boot
+Buildroot
+GCC
+GDB
+DebugFS
+Device Tree
+BeagleBone Black
+C/C++
+Q17. What skills will I gain?
+Answer:
+After completing this course, participants should be able to:
+Understand the complete Embedded Linux boot process
+Build custom Linux systems
+Configure kernels
+Generate root filesystems
+Develop Linux device drivers
+Work with Device Tree
+Implement synchronization mechanisms
+Handle interrupts
+Use Linux DMA
+Debug kernel-level issues
+Q18. Will I build an entire Linux system?
+Answer:
+Yes.
+Participants build major Embedded Linux components including:
+Bootloader
+Linux Kernel
+Root Filesystem
+Device Drivers
+before integrating and booting them on an embedded board.
+Q19. How is this different from a Linux application development course?
+Answer:
+This course focuses on the internals of Embedded Linux rather than application development.
+Instead of writing Linux applications, participants learn how Linux itself boots, interacts with hardware, manages drivers, and performs kernel-level operations.
+Q20. What makes this course different?
+Answer:
+This training emphasizes practical engineering skills through:
+Real hardware labs using BeagleBone Black
+Complete end-to-end Embedded Linux workflow
+Industry-focused content
+Practical debugging techniques
+Small class sizes
+Instructor-led guidance from an experienced embedded Linux consultant
+Q21. Is there a complimentary pre-session?
+Answer:
+Yes.
+Registered participants receive a complimentary Embedded Linux Foundations pre-session covering:
+Linux command-line refresher
+C/C++ and embedded concepts preparation
+Preparation for hands-on labs
+Q22. What will I be able to do after this course?
+Answer:
+After completing the course, participants should be able to:
+Build Embedded Linux systems from scratch
+Customize U-Boot and Linux kernel
+Generate root filesystems
+Develop Linux device drivers
+Integrate hardware using Device Tree
+Debug Linux kernel issues
+Troubleshoot boot failures
+Support BSP and embedded Linux development projects
+This follows the same format and tone as your existing Software Testing Knowledge Base, making it consistent for your WhatsApp AI assistant and easy to extend to the rest of the Timmins course catalog.

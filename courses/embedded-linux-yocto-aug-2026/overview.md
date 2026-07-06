@@ -55,3 +55,183 @@ Practical outcomes:
 - Add/remove packages and include custom applications in root filesystem
 
 Investment: RM 7,500 per participant. Group discount available for minimum 3 pax. 100% HRDC claimable.
+
+SECTION X – EMBEDDED LINUX WITH YOCTO: DEEP FOUNDATION & CUSTOMIZATION KNOWLEDGE BASE
+Q1. What is this course about?
+Answer:
+Embedded Linux with Yocto: Deep Foundation & Customization is a 5-day hands-on training that teaches engineers how to build, customize, and maintain Embedded Linux systems using the Yocto Project.
+Participants learn the complete Embedded Linux build workflow—from bootloader and kernel to root filesystem—while mastering Yocto architecture, BitBake, recipes, layers, BSP customization, and system integration using the BeagleBone Black platform.
+Q2. Who should attend?
+Answer:
+This course is suitable for:
+Embedded Software Engineers
+Firmware Engineers
+Linux System Developers
+BSP / Platform Engineers
+Device Driver Developers
+Embedded Linux Engineers
+Engineers responsible for Linux platform customization
+Q3. Is this suitable for beginners?
+Answer:
+The course is designed for engineers who are already comfortable with Linux commands and have basic Embedded Linux knowledge. Previous Yocto experience is not required.
+Q4. What are the prerequisites?
+Answer:
+Participants should have:
+Basic Linux command-line knowledge
+Comfortable working in a Linux environment
+Basic Embedded Linux knowledge
+Familiarity with bootloader, Linux kernel, or RootFS concepts is helpful
+For lab work, Ubuntu 22.04 or later is recommended.
+Q5. What hardware platform is used?
+Answer:
+The hands-on laboratories use the BeagleBone Black embedded development board as the target platform for building and testing Embedded Linux systems.
+Q6. What is Yocto?
+Answer:
+The Yocto Project is an open-source build system that allows developers to create customized Embedded Linux distributions for specific hardware platforms.
+Instead of installing packages manually, Yocto builds the entire operating system—including the bootloader, kernel, libraries, applications, and root filesystem—from source.
+Q7. What is BitBake?
+Answer:
+BitBake is the build engine used by the Yocto Project.
+It executes recipes, manages dependencies, processes build tasks, and generates complete Linux images for embedded systems.
+Participants learn BitBake fundamentals, configuration files, variables, tasks, classes, and recipe extensions.
+Q8. Will Yocto fundamentals be covered?
+Answer:
+Yes.
+Participants learn:
+Yocto architecture
+OpenEmbedded
+Poky
+BitBake
+Configuration files
+Build workflow
+Yocto project structure
+Q9. Will recipes and layers be covered?
+Answer:
+Yes.
+The course covers:
+Recipes
+bbclass
+Layers
+BSP Layers
+Meta Layers
+Variables
+Tasks
+Recipe dependencies
+bbappend extensions
+Participants also create their own Yocto layer and recipes.
+Q10. Will BSP customization be covered?
+Answer:
+Yes.
+Participants learn how to:
+Create BSP layers
+Customize board support packages
+Add new machines
+Configure platform-specific settings
+Modify machine configuration files
+Q11. Will Linux Kernel customization be covered?
+Answer:
+Yes.
+Participants learn how to:
+Configure the Linux kernel
+Build the kernel using Yocto
+Apply kernel patches
+Update kernel configuration fragments
+Extend kernel recipes
+Q12. Will U-Boot customization be covered?
+Answer:
+Yes.
+The course includes:
+U-Boot configuration
+U-Boot building
+Bootloader customization
+Bootloader patching
+Environment configuration
+Board recovery techniques
+Q13. Will Root Filesystem customization be covered?
+Answer:
+Yes.
+Participants learn how to:
+Build custom root filesystems
+Add and remove packages
+Include custom applications
+Configure init systems
+Create production-ready RootFS images
+Q14. Will boot flow be covered?
+Answer:
+Yes.
+The course explains the complete Embedded Linux boot sequence, including:
+ROM
+Bootloader
+U-Boot
+Linux Kernel
+Root Filesystem
+using practical demonstrations on BeagleBone Black.
+Q15. Is this a hands-on course?
+Answer:
+Yes.
+Every theoretical topic is accompanied by practical laboratory exercises, allowing participants to immediately apply what they learn using real Embedded Linux hardware and Yocto build environments.
+Q16. What tools and technologies are used?
+Answer:
+Participants work with:
+Yocto Project
+BitBake
+Poky
+OpenEmbedded
+Linux Kernel
+U-Boot
+BSP Layers
+Recipes
+RootFS
+BeagleBone Black
+Q17. What practical exercises are included?
+Answer:
+Participants will:
+Build Embedded Linux images
+Configure and build Linux kernels
+Configure U-Boot
+Create Yocto meta layers
+Write BitBake recipes
+Extend recipes using bbappend
+Create BSP layers
+Build and test systems on hardware
+Customize RootFS
+Apply kernel and bootloader patches
+Q18. What skills will I gain?
+Answer:
+After completing the course, participants should be able to:
+Build complete Embedded Linux systems using Yocto
+Configure and customize Linux kernels
+Create and manage Yocto layers
+Develop BitBake recipes
+Customize BSPs
+Configure bootloaders
+Generate custom root filesystems
+Build production-ready Embedded Linux images
+Q19. How is this course different from Embedded Linux System Internals?
+Answer:
+Embedded Linux System Internals focuses on understanding how Linux works internally, including boot flow, kernel architecture, device drivers, interrupts, synchronization, DMA, and debugging.
+Embedded Linux with Yocto builds on those foundations by teaching engineers how to use the Yocto Project to create, customize, package, and maintain complete Embedded Linux distributions for production hardware.
+Q20. What makes this course different?
+Answer:
+This training emphasizes practical Embedded Linux product development through:
+Deep Yocto Project knowledge
+Extensive BitBake practice
+Real hardware labs using BeagleBone Black
+BSP customization
+Kernel and bootloader patching
+Production-oriented RootFS customization
+Instructor-led guidance from an experienced Embedded Linux consultant
+Q21. Do I need my own Linux machine?
+Answer:
+Yes.
+Participants should have a PC or virtual machine running Ubuntu 22.04 or later, with approximately 150 GB of free disk space and 8 GB RAM to support Yocto builds.
+Q22. What will I be able to do after this course?
+Answer:
+After completing this course, participants should be able to:
+Build Embedded Linux systems using the Yocto Project
+Develop and customize Yocto layers
+Configure and patch U-Boot and Linux kernels
+Create production-ready root filesystems
+Add custom applications and packages
+Customize BSPs for new hardware platforms
+Build and maintain Embedded Linux distributions for commercial products
