@@ -222,29 +222,37 @@ def update_lead_in(phone: str, worksheet_name: str, workbook_name: str | None = 
 
 
 def find_phone_in_workbook(phone: str) -> str | None:
-    """Search all tabs in the Timmins Leads workbook for a phone number.
-    Returns the worksheet (tab) name where the phone was found, or None."""
+    """Search all tabs in the Timmins Leads workbook (and any extra workbook) for a phone number.
+    Returns (workbook_name, worksheet_title) tuple, or None."""
     phone_digits = _normalize_phone(phone)
     if not phone_digits:
         return None
-    try:
-        workbook = get_client().open(LEADS_WORKBOOK)
-        for ws in workbook.worksheets():
-            if ws.title == HOT_LEADS_TAB:
-                continue
-            try:
-                records = ws.get_all_records()
-                for record in records:
-                    row_phone = _normalize_phone(str(
-                        record.get("phone") or record.get("phone ") or record.get("whatsapp_number", "")
-                    ))
-                    if row_phone == phone_digits:
-                        print(f"SHEET LOOKUP: found {phone_digits} in tab '{ws.title}'")
-                        return ws.title
-            except Exception:
-                continue
-    except Exception as e:
-        print("SHEET LOOKUP ERROR:", e)
+
+    workbooks_to_search = [LEADS_WORKBOOK]
+    extra = os.getenv("TIMMINS_EXTRA_LEADS_WORKBOOK", "").strip()
+    if extra and extra not in workbooks_to_search:
+        workbooks_to_search.append(extra)
+
+    client = get_client()
+    for wb_name in workbooks_to_search:
+        try:
+            workbook = client.open(wb_name)
+            for ws in workbook.worksheets():
+                if ws.title == HOT_LEADS_TAB:
+                    continue
+                try:
+                    records = ws.get_all_records()
+                    for record in records:
+                        row_phone = _normalize_phone(str(
+                            record.get("phone") or record.get("phone ") or record.get("whatsapp_number", "")
+                        ))
+                        if row_phone == phone_digits:
+                            print(f"SHEET LOOKUP: found {phone_digits} in workbook='{wb_name}' tab='{ws.title}'")
+                            return (wb_name, ws.title)
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"SHEET LOOKUP ERROR ({wb_name}):", e)
     return None
 
 

@@ -36,6 +36,18 @@ ENABLE_GOOGLE_SHEETS = os.getenv("ENABLE_GOOGLE_SHEETS", "").lower() in {
 init_db()
 
 
+_AUTO_REPLY_SIGNALS = (
+    "auto system", "auto reply", "auto-reply", "automatic reply",
+    "not here right now", "out of office", "away message",
+    "will respond as soon as", "i am using whatsapp",
+    "i am currently unavailable", "this is an automated",
+)
+
+def _is_auto_reply(msg: str) -> bool:
+    lower = msg.lower()
+    return any(signal in lower for signal in _AUTO_REPLY_SIGNALS)
+
+
 def _faq_reply(msg: str, course=None) -> str:
     cache_key = f"{getattr(course, 'slug', '')}:{msg}"
     cached = cache_get(cache_key)
@@ -62,7 +74,7 @@ def _resolve_course(lead: dict, msg: str):
 
 _SHEET_STATUS_VALUES = {"HOT", "WARM", "COLD", "CONTACTED", "ENGAGED", "NEEDS_HUMAN"}
 
-def _update_sheet_if_enabled(phone: str, worksheet_name: str | None = None, **kwargs) -> bool:
+def _update_sheet_if_enabled(phone: str, worksheet_name: str | None = None, workbook_name: str | None = None, **kwargs) -> bool:
     if not ENABLE_GOOGLE_SHEETS:
         print("SHEET SKIPPED: disabled by ENABLE_GOOGLE_SHEETS")
         return False
@@ -85,8 +97,8 @@ def _update_sheet_if_enabled(phone: str, worksheet_name: str | None = None, **kw
         return False
 
     try:
-        result = update_lead_in(phone, worksheet_name, **sheet_kwargs)
-        print(f"SHEET WRITE: tab='{worksheet_name}' phone={phone} keys={list(sheet_kwargs.keys())} result={result}")
+        result = update_lead_in(phone, worksheet_name, workbook_name, **sheet_kwargs)
+        print(f"SHEET WRITE: workbook='{workbook_name or 'default'}' tab='{worksheet_name}' phone={phone} keys={list(sheet_kwargs.keys())} result={result}")
         return result
     except Exception as sheet_error:
         print(f"SHEET ERROR: tab='{worksheet_name}' error={sheet_error!r}")
@@ -370,6 +382,7 @@ def _queue_human_handoff(
     source: str,
     intent: str = "",
     worksheet_name: str | None = None,
+    workbook_name: str | None = None,
 ) -> None:
     queue_updates = {
         "status": "NEEDS_HUMAN",
@@ -386,7 +399,7 @@ def _queue_human_handoff(
 
     local_updated = upsert_lead(sender, **queue_updates)
     print(f"LOCAL HUMAN QUEUE UPDATED ({source}):", local_updated)
-    updated = _update_sheet_if_enabled(sender, worksheet_name=worksheet_name, **queue_updates)
+    updated = _update_sheet_if_enabled(sender, worksheet_name=worksheet_name, workbook_name=workbook_name, **queue_updates)
     print(f"SHEET HUMAN QUEUE UPDATED ({source}):", updated)
 
 
@@ -474,7 +487,11 @@ def _handle_webhook_body(body: dict) -> None:
             msg = value["messages"][0].get("text", {}).get("body", "")
             sender = value["messages"][0].get("from", "")
 
-            if msg and sender:
+            # Ignore non-text messages (reactions, images, stickers, etc.)
+            if value["messages"][0].get("type") not in ("text", None):
+                return
+
+            if msg and sender and not _is_auto_reply(msg):
                 print("MESSAGE:", msg)
                 add_message(
                     sender,
@@ -484,28 +501,51 @@ def _handle_webhook_body(body: dict) -> None:
                 )
                 lead = get_lead(sender) or {}
                 course = _resolve_course(lead, msg)
+                sheet_workbook: str | None = None  # tracks which workbook to write back to
 
-                # If course still unknown, look up the phone in the Google Sheet
-                # This handles leads contacted via outreach on a different machine
-                # whose course wasn't written to this server's SQLite.
+                # If course still unknown, search Google Sheets across all workbooks.
+                # Handles leads contacted locally whose course wasn't saved to this server's SQLite.
                 if course is None and ENABLE_GOOGLE_SHEETS and not lead.get("course"):
-                    sheet_tab = find_phone_in_workbook(sender)
-                    if sheet_tab:
-                        from services.course_loader import load_courses
-                        for slug, c in load_courses().items():
-                            if c.worksheet_name == sheet_tab:
+                    from services.course_loader import load_courses as _lc
+                    from services.google_sheets import _normalize_phone as _np
+                    lookup = find_phone_in_workbook(sender)
+                    if lookup:
+                        found_workbook, found_tab = lookup
+                        sheet_workbook = found_workbook
+                        all_courses = _lc()
+                        # Try matching tab name to a course's worksheet_name
+                        for slug, c in all_courses.items():
+                            if c.worksheet_name == found_tab:
                                 course = c
                                 break
+                        # Tab name doesn't match a course — detect from ad_name in that row
+                        if course is None:
+                            try:
+                                rows = get_rows_from(found_tab, found_workbook)
+                                for row in rows:
+                                    rp = _np(str(row.get("whatsapp_number") or row.get("phone", "")))
+                                    if rp == _np(sender):
+                                        ad_name = str(row.get("ad_name", "") or "").lower()
+                                        for slug, c in all_courses.items():
+                                            for kw in (c.keywords or []):
+                                                if kw.lower() in ad_name:
+                                                    course = c
+                                                    break
+                                            if course:
+                                                break
+                                        break
+                            except Exception as e:
+                                print("EXTRA WORKBOOK LOOKUP ERROR:", e)
 
                 if course and not lead.get("course"):
                     upsert_lead(sender, course=course.slug)
                     lead = {**lead, "course": course.slug}
 
                 worksheet = getattr(course, "worksheet_name", None)
-                print(f"COURSE RESOLVED: slug={getattr(course,'slug','None')} worksheet={worksheet}")
+                print(f"COURSE RESOLVED: slug={getattr(course,'slug','None')} worksheet={worksheet} workbook={sheet_workbook or 'default'}")
                 human_reason = _human_escalation_reason(msg.lower())
                 if human_reason:
-                    _queue_human_handoff(sender, lead, reason=human_reason, source="keyword", worksheet_name=worksheet)
+                    _queue_human_handoff(sender, lead, reason=human_reason, source="keyword", worksheet_name=worksheet, workbook_name=sheet_workbook)
 
                     customer_reply = (
                         "Thanks. A consultant will contact you shortly regarding that request."
@@ -531,7 +571,7 @@ def _handle_webhook_body(body: dict) -> None:
                 if state_updates:
                     local_updated = upsert_lead(sender, **state_updates)
                     print("LOCAL STATE UPDATED:", local_updated)
-                    updated = _update_sheet_if_enabled(sender, worksheet_name=worksheet, **state_updates)
+                    updated = _update_sheet_if_enabled(sender, worksheet_name=worksheet, workbook_name=sheet_workbook, **state_updates)
                     print("SHEET STATE UPDATED:", updated)
 
                     if str(state_updates.get("status") or "") == "HOT":
@@ -542,6 +582,7 @@ def _handle_webhook_body(body: dict) -> None:
                             source="hot_lead",
                             intent="HOT_LEAD",
                             worksheet_name=worksheet,
+                            workbook_name=sheet_workbook,
                         )
                         if ENABLE_GOOGLE_SHEETS:
                             appended = append_hot_lead(sender, lead, state_updates)
@@ -562,6 +603,7 @@ def _handle_webhook_body(body: dict) -> None:
                 updated = _update_sheet_if_enabled(
                     sender,
                     worksheet_name=worksheet,
+                    workbook_name=sheet_workbook,
                     last_intent=topic_label,
                     last_intent_reason=topic_reason,
                     last_message=reply_text,
