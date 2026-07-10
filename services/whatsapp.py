@@ -1,11 +1,42 @@
 from __future__ import annotations
 
 import os
+import time
 
 import requests
 
 
 session = requests.Session()
+
+# Simulate human typing: wait this many seconds before sending a reply.
+# Configurable via REPLY_DELAY_SECONDS env var (default 2).
+def _reply_delay() -> float:
+    try:
+        return float(os.getenv("REPLY_DELAY_SECONDS", "2"))
+    except ValueError:
+        return 2.0
+
+
+def mark_read(message_id: str) -> None:
+    """Send read receipt so the lead sees blue ticks immediately."""
+    phone_number_id = _phone_number_id()
+    access_token = _access_token()
+    try:
+        session.post(
+            f"https://graph.facebook.com/v25.0/{phone_number_id}/messages",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "messaging_product": "whatsapp",
+                "status": "read",
+                "message_id": message_id,
+            },
+            timeout=10,
+        )
+    except Exception:
+        pass
 
 
 def _phone_number_id() -> str:

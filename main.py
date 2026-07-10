@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -11,7 +12,7 @@ from services.knowledge_base import topic_for_message
 from services.reply_cache import get as cache_get
 from services.reply_cache import set as cache_set
 from services.google_sheets import update_lead, update_lead_in, append_hot_lead, find_phone_in_workbook
-from services.whatsapp import send_text
+from services.whatsapp import send_text, mark_read, _reply_delay
 from services.sqlite_store import (
     add_message,
     get_conversation_history,
@@ -508,8 +509,10 @@ def _handle_webhook_body(body: dict) -> None:
                     return
                 if msg_id:
                     seen_message_ids.add(msg_id)
+                    mark_read(msg_id)  # show blue ticks immediately
 
                 print("MESSAGE:", msg)
+                time.sleep(_reply_delay())  # pause before replying — feels human
                 add_message(
                     sender,
                     direction="inbound",
