@@ -25,6 +25,7 @@ load_dotenv()
 
 app = FastAPI()
 seen_status_events: set[tuple[str, str]] = set()
+seen_message_ids: set[str] = set()  # dedup incoming message events by wamid
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 ENABLE_GOOGLE_SHEETS = os.getenv("ENABLE_GOOGLE_SHEETS", "").lower() in {
@@ -295,16 +296,35 @@ def _process_conversation(message: str, lead: dict[str, str], course=None) -> tu
     state = _get_state(lead)
     lead_status = (lead.get("status") or "").upper()
 
-    # First reply after outreach template — send warm greeting with CTA
-    if state not in _ACTIVE_STATES and lead_status == "CONTACTED" and not ("interested" in msg_lower or "yes" in msg_lower):
+    _INTEREST_SIGNALS = (
+        "interested", "yes", "i am interested", "i'm interested",
+        "want to join", "want to register", "sign me up", "sign up",
+        "register", "enroll", "i want",
+    )
+    _INFO_REQUEST_SIGNALS = (
+        "more info", "share more", "can share", "tell me more",
+        "more details", "more information", "share info",
+        "know more", "learn more", "what is this", "what course",
+    )
+
+    is_interested = any(s in msg_lower for s in _INTEREST_SIGNALS)
+    is_info_request = any(s in msg_lower for s in _INFO_REQUEST_SIGNALS)
+
+    # First reply after outreach — greet any message that isn't a direct "yes/interested"
+    # Also fires when lead_status is blank (lead not yet in Render's SQLite)
+    if state not in _ACTIVE_STATES and lead_status in ("CONTACTED", "") and not is_interested:
         return _first_contact_greeting(lead, course), {"status": "ENGAGED"}
 
     # Pure greeting when not in active qualification — also greet
     if _is_greeting(message) and state not in _ACTIVE_STATES:
         return _first_contact_greeting(lead, course), None
 
-    # Trigger: "interested" or "yes" starts qualification
-    if ("interested" in msg_lower or msg_lower == "yes") and state not in _ACTIVE_STATES:
+    # Info requests from engaged leads → start qualification (they clearly want to proceed)
+    if is_info_request and state not in _ACTIVE_STATES:
+        return _experience_years_prompt(lead), _state_update("ASKING_EXPERIENCE_YEARS")
+
+    # Trigger: interest signals start qualification
+    if is_interested and state not in _ACTIVE_STATES:
         return _experience_years_prompt(lead), _state_update("ASKING_EXPERIENCE_YEARS")
 
     if state not in _ACTIVE_STATES:
@@ -492,12 +512,19 @@ def _handle_webhook_body(body: dict) -> None:
                 return
 
             if msg and sender and not _is_auto_reply(msg):
+                msg_id = value["messages"][0].get("id") or ""
+                if msg_id and msg_id in seen_message_ids:
+                    print(f"DEDUP: already processed message {msg_id}, skipping")
+                    return
+                if msg_id:
+                    seen_message_ids.add(msg_id)
+
                 print("MESSAGE:", msg)
                 add_message(
                     sender,
                     direction="inbound",
                     body=msg,
-                    message_id=value["messages"][0].get("id"),
+                    message_id=msg_id or None,
                 )
                 lead = get_lead(sender) or {}
                 course = _resolve_course(lead, msg)
