@@ -301,27 +301,17 @@ def _process_conversation(message: str, lead: dict[str, str], course=None) -> tu
         "want to join", "want to register", "sign me up", "sign up",
         "register", "enroll", "i want",
     )
-    _INFO_REQUEST_SIGNALS = (
-        "more info", "share more", "can share", "tell me more",
-        "more details", "more information", "share info",
-        "know more", "learn more", "what is this", "what course",
-    )
-
     is_interested = any(s in msg_lower for s in _INTEREST_SIGNALS)
-    is_info_request = any(s in msg_lower for s in _INFO_REQUEST_SIGNALS)
 
-    # First reply after outreach — greet any message that isn't a direct "yes/interested"
-    # Also fires when lead_status is blank (lead not yet in Render's SQLite)
+    # First reply after outreach — greet any message that isn't a direct interest signal.
+    # Also fires when lead_status is blank (lead not yet in Render's SQLite).
+    # Specific questions (fees, schedule, etc.) from ENGAGED leads fall through to FAQ below.
     if state not in _ACTIVE_STATES and lead_status in ("CONTACTED", "") and not is_interested:
         return _first_contact_greeting(lead, course), {"status": "ENGAGED"}
 
     # Pure greeting when not in active qualification — also greet
     if _is_greeting(message) and state not in _ACTIVE_STATES:
         return _first_contact_greeting(lead, course), None
-
-    # Info requests from engaged leads → start qualification (they clearly want to proceed)
-    if is_info_request and state not in _ACTIVE_STATES:
-        return _experience_years_prompt(lead), _state_update("ASKING_EXPERIENCE_YEARS")
 
     # Trigger: interest signals start qualification
     if is_interested and state not in _ACTIVE_STATES:
