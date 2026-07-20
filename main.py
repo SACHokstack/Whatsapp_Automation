@@ -309,6 +309,38 @@ def _first_contact_greeting(lead: dict, course) -> str:
     )
 
 
+def _form_fill_greeting(lead: dict, course) -> str:
+    """Personalised reply for a Meta Lead Form auto-message that already contains the lead's profile."""
+    name = (lead.get("name") or "").strip()
+    first_name = name.split()[0] if name else ""
+    job_title = (lead.get("job_title") or "").strip()
+    company = (lead.get("company_name") or "").strip()
+    who_pays = (lead.get("who_will_pay") or "").strip().lower()
+    course_name = getattr(course, "name", None) if course else None
+
+    greeting = f"Hi {first_name}! " if first_name else "Hi! "
+    lines = [greeting + "Thanks for reaching out to Timmins."]
+
+    if job_title and company:
+        lines.append(f"I can see you're a {job_title} at {company}.")
+    elif job_title:
+        lines.append(f"I can see you're a {job_title}.")
+    elif company:
+        lines.append(f"I can see you're from {company}.")
+
+    if course_name:
+        lines.append(f"You've shown interest in our *{course_name}* program.")
+
+    if any(w in who_pays for w in ("company", "hrdc", "employer", "sponsor")):
+        lines.append("Good news — since your company is sponsoring, this training is HRDC claimable and we'll help with the grant application.")
+    elif any(w in who_pays for w in ("self", "own", "personal")):
+        lines.append("We have flexible self-pay options available too.")
+
+    lines.append("What would you like to know? Feel free to ask about the schedule, fees, curriculum, or HRDC process.")
+
+    return "\n\n".join(lines)
+
+
 # --- State helpers ---
 
 _ACTIVE_STATES = {
@@ -571,7 +603,8 @@ def _handle_webhook_body(body: dict) -> None:
                 lead = get_lead(sender) or {}
 
                 # Parse Meta Lead Form auto-message and save lead data immediately
-                if _FORM_FILL_RE.search(msg):
+                is_form_fill = bool(_FORM_FILL_RE.search(msg))
+                if is_form_fill:
                     form_data = _parse_form_fill(msg)
                     if form_data:
                         upsert_lead(sender, **{k: v for k, v in form_data.items() if v})
@@ -648,10 +681,15 @@ def _handle_webhook_body(body: dict) -> None:
                     )
                     return
 
-                reply_text, state_updates = _process_conversation(msg, lead, course=course)
-                if reply_text is None:
-                    reply_text = _faq_reply(msg, course=course)
-                    state_updates = None
+                # Form-fill: skip generic flow, reply with a personalised message using their submitted details
+                if is_form_fill and _get_state(lead) not in _ACTIVE_STATES:
+                    reply_text = _form_fill_greeting(lead, course)
+                    state_updates = {"status": "ENGAGED"}
+                else:
+                    reply_text, state_updates = _process_conversation(msg, lead, course=course)
+                    if reply_text is None:
+                        reply_text = _faq_reply(msg, course=course)
+                        state_updates = None
                 topic_label = str(topic_for_message(msg) or "GENERAL").upper()
                 topic_reason = "groq_rag"
 
