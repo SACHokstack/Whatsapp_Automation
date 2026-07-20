@@ -11,7 +11,7 @@ from services.course_loader import detect_course, get_course
 from services.knowledge_base import topic_for_message
 from services.reply_cache import get as cache_get
 from services.reply_cache import set as cache_set
-from services.google_sheets import update_lead, update_lead_in, append_hot_lead, find_phone_in_workbook
+from services.google_sheets import update_lead, update_lead_in, append_hot_lead, find_phone_in_workbook, get_rows_from
 from services.whatsapp import send_text, mark_read, _reply_delay
 from services.sqlite_store import (
     add_message,
@@ -48,6 +48,52 @@ _AUTO_REPLY_SIGNALS = (
 def _is_auto_reply(msg: str) -> bool:
     lower = msg.lower()
     return any(signal in lower for signal in _AUTO_REPLY_SIGNALS)
+
+
+_FORM_FILL_RE = re.compile(r"i (?:filled?|fill)[^\n]*form", re.IGNORECASE)
+
+def _parse_form_fill(msg: str) -> dict:
+    """Extract structured fields from Meta Lead Ad auto-message."""
+    data: dict[str, str] = {}
+    for field, pattern in (
+        ("name", r"full[\s_]?name[:\s]+([^\n]+)"),
+        ("email", r"e-?mail[:\s]+([^\n]+)"),
+        ("company_name", r"company[\s_]?name[:\s]+([^\n]+)"),
+        ("job_title", r"job[\s_]?title[:\s]+([^\n]+)"),
+        ("who_will_pay", r"who will pay\??[:\s]+([^\n]+)"),
+    ):
+        m = re.search(pattern, msg, re.IGNORECASE)
+        if m:
+            data[field] = m.group(1).strip()
+    return data
+
+
+def _detect_course_from_referral(referral: dict):
+    """Detect course from Meta Lead Ad referral metadata (headline/body from the ad)."""
+    if not referral:
+        return None
+    text = " ".join([
+        referral.get("headline", ""),
+        referral.get("body", ""),
+        referral.get("source_url", ""),
+    ]).lower()
+    if not text.strip():
+        return None
+    from services.course_loader import load_courses
+    all_courses = load_courses()
+    for slug, c in all_courses.items():
+        for kw in (c.keywords or []):
+            if kw.lower() in text:
+                return c
+    if "yoct" in text or "y0ct" in text:
+        for slug, c in all_courses.items():
+            if "yocto" in slug:
+                return c
+    if "elsi" in text or "system internals" in text or "internals" in text:
+        for slug, c in all_courses.items():
+            if "internals" in slug:
+                return c
+    return None
 
 
 def _faq_reply(msg: str, course=None) -> str:
@@ -511,6 +557,9 @@ def _handle_webhook_body(body: dict) -> None:
                     seen_message_ids.add(msg_id)
                     mark_read(msg_id)  # show blue ticks immediately
 
+                # Referral is present when message originates from a Meta ad click
+                referral = value["messages"][0].get("referral") or {}
+
                 print("MESSAGE:", msg)
                 time.sleep(_reply_delay())  # pause before replying — feels human
                 add_message(
@@ -520,7 +569,25 @@ def _handle_webhook_body(body: dict) -> None:
                     message_id=msg_id or None,
                 )
                 lead = get_lead(sender) or {}
+
+                # Parse Meta Lead Form auto-message and save lead data immediately
+                if _FORM_FILL_RE.search(msg):
+                    form_data = _parse_form_fill(msg)
+                    if form_data:
+                        upsert_lead(sender, **{k: v for k, v in form_data.items() if v})
+                        lead = {**lead, **form_data}
+                        print("FORM FILL PARSED:", form_data)
+
                 course = _resolve_course(lead, msg)
+
+                # Referral from Meta ad — most reliable source for new leads
+                if course is None and referral:
+                    course = _detect_course_from_referral(referral)
+                    if course:
+                        print(f"COURSE FROM REFERRAL: {course.slug}")
+                        upsert_lead(sender, course=course.slug)
+                        lead = {**lead, "course": course.slug}
+
                 sheet_workbook: str | None = None  # tracks which workbook to write back to
 
                 # If course still unknown, search Google Sheets across all workbooks.
