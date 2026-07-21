@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
-import re
-
 
 _ROOT = Path(__file__).resolve().parents[1]
 _KNOWLEDGE_DIR = _ROOT / "knowledge"
@@ -19,23 +18,114 @@ KEYWORD_FALLBACKS = [
 # Shared KB topics only — course-specific topics (fees, schedule, venue, course content)
 # now live in courses/<slug>/config.yaml and courses/<slug>/overview.md
 SHARED_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "company": ("who is timmins", "about timmins", "timmins training", "what is timmins", "your company", "clients", "industries", "vendor registration", "vendor", "contact timmins", "your clients"),
-    "payment": ("payment", "pay", "installment", "installments", "bank transfer", "invoice", "quotation"),
+    "company": (
+        "who is timmins",
+        "about timmins",
+        "timmins training",
+        "what is timmins",
+        "your company",
+        "clients",
+        "industries",
+        "vendor registration",
+        "vendor",
+        "contact timmins",
+        "your clients",
+        "contact",
+        "email",
+        "phone number",
+        "how to reach",
+        "reach you",
+        "get in touch",
+        "your email",
+        "your number",
+        "your phone",
+        "whatsapp number",
+        "call you",
+    ),
+    "payment": (
+        "payment",
+        "pay",
+        "installment",
+        "installments",
+        "bank transfer",
+        "invoice",
+        "quotation",
+    ),
     "cancellation": ("cancel", "cancellation", "reschedule", "refund"),
-    "certification": ("certificate", "certification", "certificates", "what is included", "whats included"),
-    "trainers": ("trainer", "trainers", "trainer profile", "trainer discussion", "who is the trainer"),
+    "certification": (
+        "certificate",
+        "certification",
+        "certificates",
+        "what is included",
+        "whats included",
+    ),
+    "trainers": (
+        "trainer",
+        "trainers",
+        "trainer profile",
+        "trainer discussion",
+        "who is the trainer",
+    ),
     "placement": ("placement", "career", "job support", "post-training", "opportunity"),
-    "requirements": ("requirement", "requirements", "prerequisite", "prerequisites", "background", "laptop", "bring my own", "beginner"),
-    "hrdc": ("hrdc", "claimable", "grant", "hrdc approval", "portal", "sponsor", "sponsored", "hrdc funding", "unemployed"),
+    "requirements": (
+        "requirement",
+        "requirements",
+        "prerequisite",
+        "prerequisites",
+        "background",
+        "laptop",
+        "bring my own",
+        "beginner",
+    ),
+    "hrdc": (
+        "hrdc",
+        "claimable",
+        "grant",
+        "hrdc approval",
+        "portal",
+        "sponsor",
+        "sponsored",
+        "hrdc funding",
+        "unemployed",
+    ),
     "online": ("online", "virtual", "remote", "zoom", "google meet"),
     "batch_size": ("batch size", "batch", "students per batch", "class size", "how many students"),
 }
 
 STOPWORDS = {
-    "the", "a", "an", "and", "or", "to", "for", "of", "is", "are",
-    "i", "you", "we", "my", "your", "can", "do", "does", "what",
-    "when", "where", "how", "please", "tell", "me", "about", "with",
-    "this", "that", "be", "it", "on", "in",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "to",
+    "for",
+    "of",
+    "is",
+    "are",
+    "i",
+    "you",
+    "we",
+    "my",
+    "your",
+    "can",
+    "do",
+    "does",
+    "what",
+    "when",
+    "where",
+    "how",
+    "please",
+    "tell",
+    "me",
+    "about",
+    "with",
+    "this",
+    "that",
+    "be",
+    "it",
+    "on",
+    "in",
 }
 
 
@@ -44,8 +134,18 @@ def _strip_internal_notes(text: str) -> str:
     return parts[0].strip()
 
 
-@lru_cache(maxsize=1)
-def load_knowledge_base() -> dict[str, str]:
+def knowledge_content_version() -> tuple[tuple[str, int, int], ...]:
+    """Fingerprint knowledge files so edits invalidate the local cache."""
+    if not _KNOWLEDGE_DIR.exists():
+        return ()
+    return tuple(
+        (path.name, path.stat().st_mtime_ns, path.stat().st_size)
+        for path in sorted(_KNOWLEDGE_DIR.glob("*.md"))
+    )
+
+
+@lru_cache(maxsize=4)
+def _load_knowledge_base_cached(_version) -> dict[str, str]:
     kb: dict[str, str] = {}
     if not _KNOWLEDGE_DIR.exists():
         return kb
@@ -53,6 +153,16 @@ def load_knowledge_base() -> dict[str, str]:
         raw = path.read_text(encoding="utf-8").strip()
         kb[path.stem.lower()] = _strip_internal_notes(raw)
     return kb
+
+
+def load_knowledge_base() -> dict[str, str]:
+    return _load_knowledge_base_cached(knowledge_content_version())
+
+
+def refresh_knowledge_base() -> dict[str, str]:
+    """Reload shared knowledge files without restarting the process."""
+    _load_knowledge_base_cached.cache_clear()
+    return load_knowledge_base()
 
 
 def _normalize(text: str) -> str:
@@ -113,6 +223,7 @@ def build_rag_context(message: str, course=None) -> str:
 
     if course is not None:
         from services.course_loader import course_context_text
+
         parts.append(course_context_text(course))
         if course.overview:
             parts.append(f"[COURSE OVERVIEW]\n{course.overview}")

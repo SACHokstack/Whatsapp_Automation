@@ -20,7 +20,9 @@ Timmins delivers HRDC-registered training programs and can provide HRDC registra
 
 Timmins can also support vendor registration and procurement onboarding activities.
 
-You may reach us via WhatsApp, email, or phone.
+Contact us:
+- Email: info@timmins-consulting.com
+- Phone / WhatsApp: +60 14-395 3661
 
 ---
 Layer 1: Company Knowledge Base — used for "who is timmins", "about timmins", "clients", "industries" queries.
