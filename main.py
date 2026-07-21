@@ -290,11 +290,12 @@ def _final_qualification_reply() -> str:
 _GREETING_WORDS = {
     "hi", "hello", "hey", "hiya", "helo", "hai",
     "good morning", "good afternoon", "good evening",
-    "thanks", "thank you", "ok", "okay", "noted",
 }
+# Short acks that feel like greetings but shouldn't re-trigger the welcome
+_PHATIC_ACKS = {"thanks", "thank you", "ok", "okay", "noted", "alright", "sure", "got it", "k"}
 
 def _is_greeting(msg: str) -> bool:
-    return msg.strip().lower() in _GREETING_WORDS
+    return msg.strip().lower() in (_GREETING_WORDS | _PHATIC_ACKS)
 
 
 def _first_contact_greeting(lead: dict, course) -> str:
@@ -376,9 +377,11 @@ def _process_conversation(message: str, lead: dict[str, str], course=None) -> tu
     lead_status = (lead.get("status") or "").upper()
 
     _INTEREST_SIGNALS = (
-        "interested", "yes", "i am interested", "i'm interested",
+        "interested", "i am interested", "i'm interested",
         "want to join", "want to register", "sign me up", "sign up",
-        "register", "enroll", "i want",
+        "i want to join", "i want to register", "i want to enroll",
+        "register", "enroll", "yes i'm interested", "yes i am interested",
+        "yes, interested",
     )
     is_interested = any(s in msg_lower for s in _INTEREST_SIGNALS)
 
@@ -388,8 +391,11 @@ def _process_conversation(message: str, lead: dict[str, str], course=None) -> tu
     if state not in _ACTIVE_STATES and lead_status in ("CONTACTED", "") and not is_interested:
         return _first_contact_greeting(lead, course), {"status": "ENGAGED"}
 
-    # Pure greeting when not in active qualification — also greet
+    # Pure greeting when not in active qualification
     if _is_greeting(message) and state not in _ACTIVE_STATES:
+        # Phatic acks (ok, noted, thanks…) mid-conversation should not re-send the welcome
+        if message.strip().lower() in _PHATIC_ACKS and lead_status not in ("CONTACTED", ""):
+            return "Sure, I'm here! Feel free to ask me anything about the course.", None
         return _first_contact_greeting(lead, course), None
 
     # Trigger: interest signals start qualification
@@ -515,6 +521,27 @@ def _hot_lead_summary(sender: str, lead: dict[str, str], updates: dict[str, str 
 
 def _human_escalation_reason(msg_lower: str) -> str | None:
     triggers = {
+        # Human/agent requests — check these first (longer phrases before substrings)
+        "talk to a person": "Requested human agent",
+        "talk to someone": "Requested human agent",
+        "talk to somebody": "Requested human agent",
+        "speak to a person": "Requested human agent",
+        "speak to someone": "Requested human agent",
+        "speak to somebody": "Requested human agent",
+        "speak with someone": "Requested human agent",
+        "speak with a person": "Requested human agent",
+        "want to speak": "Requested human agent",
+        "want to talk": "Requested human agent",
+        "real person": "Requested human agent",
+        "human agent": "Requested human agent",
+        "talk to consultant": "Requested consultant",
+        "speak to consultant": "Requested consultant",
+        "speak with consultant": "Requested consultant",
+        # Callback requests
+        "call me": "Requested callback",
+        "give me a call": "Requested callback",
+        "please call": "Requested callback",
+        # Commercial / special terms
         "discount": "Requested discount",
         "special pricing": "Requested special pricing",
         "group booking": "Requested group booking",
@@ -667,8 +694,10 @@ def _handle_webhook_body(body: dict) -> None:
                 if human_reason:
                     _queue_human_handoff(sender, lead, reason=human_reason, source="keyword", worksheet_name=worksheet, workbook_name=sheet_workbook)
 
+                    first_name = (lead.get("name") or "").strip().split()[0] if lead.get("name") else ""
+                    name_part = f", {first_name}" if first_name else ""
                     customer_reply = (
-                        "Thanks. A consultant will contact you shortly regarding that request."
+                        f"Of course{name_part}! I'll flag this to our consultant right away and someone will reach out to you shortly."
                     )
                     response = send_text(sender, customer_reply)
                     print("AUTO REPLY STATUS:", response.status_code)
