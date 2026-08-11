@@ -29,6 +29,12 @@ SHARED_TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "vendor registration",
         "vendor",
         "contact timmins",
+        "email",
+        "email address",
+        "phone number",
+        "office phone",
+        "contact number",
+        "whatsapp number",
         "your clients",
         "contact",
         "email",
@@ -214,14 +220,20 @@ def topic_for_message(message: str) -> str | None:
     return topics[0] if topics else None
 
 
-def build_rag_context(message: str, course=None) -> str:
+def build_rag_context(message: str, course=None, *, include_catalog: bool = False) -> str:
     """
     Build the full RAG context string to pass to the LLM.
     Includes: course config facts + course overview + relevant shared KB docs.
     """
     parts: list[str] = []
 
-    if course is not None:
+    if include_catalog:
+        from services.course_loader import course_context_text, get_active_courses
+
+        catalog = [course_context_text(item) for item in get_active_courses()]
+        if catalog:
+            parts.append("[ACTIVE COURSE CATALOG]\n" + "\n\n".join(catalog))
+    elif course is not None:
         from services.course_loader import course_context_text
 
         parts.append(course_context_text(course))
