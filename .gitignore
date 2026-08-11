@@ -3,7 +3,31 @@
 venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+local-data/
 whatsapp_bot.db
 *.db
 credentials.json
-Lead _ SW Testing July 2026 Intake.xlsx
+rag_traces/
+
+# Lead data / customer PII — never commit
+*.xlsx
+
+# Large source archives (KB_extracted is the unpacked version, already tracked)
+*.zip
+
+# External reference clones (have their own .git)
+reference_repos/
+
+# Runtime data, logs, exports, screenshots
+var/
+export_log/
+log.txt
+images/
+*.png
+
+# Superseded asset from the removed flyer feature (gitignore matches spaces literally, no quotes)
+Timmins Training Consulting Sdn Bhd - Training Calendar - July August 2026.pdf

@@ -1,12 +1,52 @@
 services:
   - type: web
     name: timmins-whatsapp-webhook
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
+    runtime: python
+    plan: starter
+    region: singapore
+    # Pre-download the embedding model at build time so the first reply is not
+    # blocked on model fetch.
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      python -c "from fastembed import TextEmbedding; list(TextEmbedding(model_name='BAAI/bge-small-en-v1.5').embed(['warmup']))"
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /
+    healthCheckPath: /health/ready
     autoDeploy: true
     envVars:
       - key: VERIFY_TOKEN
         sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      # Alternatively, remove the two access-key fields above and configure a
+      # Bedrock API key as AWS_BEARER_TOKEN_BEDROCK in the Render dashboard.
+      - key: RAG_GENERATION_PROVIDER
+        value: bedrock
+      - key: RAG_GENERATION_MODEL
+        value: openai.gpt-oss-120b-1:0
+      - key: INTERPRETER_PROVIDER
+        value: bedrock
+      - key: INTERPRETER_MODEL
+        value: openai.gpt-oss-120b-1:0
+      - key: BEDROCK_REGION
+        value: ap-south-1
+      - key: BOT_SAFE_MODE
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: timmins-whatsapp-db
+          property: connectionString
+
+databases:
+  - name: timmins-whatsapp-db
+    plan: basic-256mb
+    region: singapore
+    postgresMajorVersion: "18"
+    ipAllowList: []

@@ -1,0 +1,31 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    "venv",
+    "export_log",
+    "KB_extracted",
+    "NEW_Courses",
+    "send_text_to_me.py",
+    "send_to_me.py",
+    "test_sheet_send.py",
+    "wakeup.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"main.py" = ["E402"]
+"import_leads.py" = ["E402"]
+"mark_contacted.py" = ["E402"]
+"outreach.py" = ["E402"]
+"setup_sheet.py" = ["E402"]
+"scripts/evaluate_responses.py" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
