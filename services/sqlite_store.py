@@ -6,12 +6,13 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 DEFAULT_DB_PATH = "whatsapp_bot.db"
 
 
 def _db_path() -> Path:
-    return Path(os.getenv("WHATSAPP_DB_PATH", DEFAULT_DB_PATH))
+    return Path(
+        os.getenv("WHATSAPP_DB_PATH") or os.getenv("WHATSAPP_SQLITE_PATH") or DEFAULT_DB_PATH
+    )
 
 
 def _utc_now() -> str:
@@ -66,8 +67,7 @@ def init_db() -> None:
             """
         )
         existing_columns = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(leads)").fetchall()
+            row["name"] for row in conn.execute("PRAGMA table_info(leads)").fetchall()
         }
         for column_sql, column_name in [
             ("ALTER TABLE leads ADD COLUMN conversation_state TEXT", "conversation_state"),
@@ -195,12 +195,35 @@ def upsert_lead(
                 updated_at = excluded.updated_at
             """,
             (
-                phone, name, course, status, conversation_state, qualification_step,
-                last_intent, last_intent_reason, needs_human, human_reason, human_status,
-                human_updated_at, last_message, last_reply, assigned_to,
-                occupation, experience, budget, availability, lead_score,
-                job_title, company_name, who_will_pay, email,
-                experience_years, technologies, motivation, learning_goals, funding_path,
+                phone,
+                name,
+                course,
+                status,
+                conversation_state,
+                qualification_step,
+                last_intent,
+                last_intent_reason,
+                needs_human,
+                human_reason,
+                human_status,
+                human_updated_at,
+                last_message,
+                last_reply,
+                assigned_to,
+                occupation,
+                experience,
+                budget,
+                availability,
+                lead_score,
+                job_title,
+                company_name,
+                who_will_pay,
+                email,
+                experience_years,
+                technologies,
+                motivation,
+                learning_goals,
+                funding_path,
                 _utc_now(),
             ),
         )
@@ -257,7 +280,17 @@ def get_messages(phone: str, *, limit: int | None = None) -> list[dict[str, str]
     query = "SELECT phone, direction, body, message_id, created_at FROM messages WHERE phone = ? ORDER BY id ASC"
     params: tuple[object, ...] = (phone,)
     if limit is not None and limit > 0:
-        query += " LIMIT ?"
+        query = """
+            SELECT phone, direction, body, message_id, created_at
+            FROM (
+                SELECT id, phone, direction, body, message_id, created_at
+                FROM messages
+                WHERE phone = ?
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+        """
         params = (phone, limit)
 
     with get_connection() as conn:
@@ -299,7 +332,6 @@ def get_dashboard_summary() -> dict[str, object]:
         "total_leads": int(total_leads or 0),
         "total_messages": int(total_messages or 0),
         "leads_by_status": [
-            {"status": str(row["status"]), "count": int(row["count"])}
-            for row in lead_rows
+            {"status": str(row["status"]), "count": int(row["count"])} for row in lead_rows
         ],
     }
