@@ -9,6 +9,7 @@ What it does:
 Usage:
   python setup_sheet.py [--dry-run]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,7 +20,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from services.course_loader import load_courses
-from services.google_sheets import get_client, LEADS_WORKBOOK, HOT_LEADS_TAB, _HOT_LEAD_COLUMNS
+from services.google_sheets import _HOT_LEAD_COLUMNS, HOT_LEADS_TAB, LEADS_WORKBOOK, get_client
 
 # Columns to ensure exist in every course tab (in addition to what Meta already provides)
 QUALIFICATION_COLUMNS = [
@@ -85,7 +86,9 @@ def setup_hot_leads_tab(workbook, dry_run: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Set up Timmins Leads Google Sheet structure")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would change without writing")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would change without writing"
+    )
     args = parser.parse_args()
 
     mode = "DRY RUN" if args.dry_run else "LIVE"

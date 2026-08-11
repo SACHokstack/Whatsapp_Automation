@@ -9,6 +9,7 @@ Usage:
   python import_leads.py --file "New Lead Generation _ Embedded Sw _ July - August 26.xlsx"
   python import_leads.py --file leads.xlsx --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,8 +22,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import openpyxl
+
 from services.course_loader import load_courses
-from services.google_sheets import get_client, LEADS_WORKBOOK
+from services.google_sheets import LEADS_WORKBOOK, get_client
 
 # Columns written to the Google Sheet tab (in order)
 IMPORT_COLUMNS = [
@@ -33,6 +35,15 @@ IMPORT_COLUMNS = [
     "company_name",
     "who_will_pay",
     "lead_status",
+    "course_slug",
+    "ad_id",
+    "ad_name",
+    "adset_id",
+    "adset_name",
+    "campaign_id",
+    "campaign_name",
+    "form_id",
+    "form_name",
 ]
 
 
@@ -48,7 +59,7 @@ def _detect_course_from_ad(ad_name: str, courses: dict) -> str | None:
     for slug, course in courses.items():
         if not course.outreach_template:
             continue
-        for kw in (course.keywords or []):
+        for kw in course.keywords or []:
             if kw.lower() in ad_lower:
                 return slug
     # Fallback: common ad abbreviations
@@ -117,9 +128,15 @@ def _existing_phones(ws) -> set[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Import Meta Lead Ads export into Timmins Leads workbook")
+    parser = argparse.ArgumentParser(
+        description="Import Meta Lead Ads export into Timmins Leads workbook"
+    )
     parser.add_argument("--file", required=True, help="Path to Excel (.xlsx) file")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be written without touching the sheet")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be written without touching the sheet",
+    )
     args = parser.parse_args()
 
     file_path = Path(args.file)
@@ -214,8 +231,19 @@ def main() -> None:
                 "email": str(row.get("email", "") or "").strip(),
                 "job_title": str(row.get("job_title", "") or "").strip(),
                 "company_name": str(row.get("company_name", "") or "").strip(),
-                "who_will_pay": str(row.get("who_will_pay?", "") or row.get("who_will_pay", "") or "").strip(),
+                "who_will_pay": str(
+                    row.get("who_will_pay?", "") or row.get("who_will_pay", "") or ""
+                ).strip(),
                 "lead_status": "CREATED",
+                "course_slug": slug,
+                "ad_id": str(row.get("ad_id", "") or ""),
+                "ad_name": str(row.get("ad_name", "") or ""),
+                "adset_id": str(row.get("adset_id", "") or ""),
+                "adset_name": str(row.get("adset_name", "") or ""),
+                "campaign_id": str(row.get("campaign_id", "") or ""),
+                "campaign_name": str(row.get("campaign_name", "") or ""),
+                "form_id": str(row.get("form_id", "") or ""),
+                "form_name": str(row.get("form_name", "") or ""),
             }
 
             # Build row in header order; blank for any column not in our map

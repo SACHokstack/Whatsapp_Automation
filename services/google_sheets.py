@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 
 import gspread
+from google.auth.exceptions import GoogleAuthError
 from google.oauth2.service_account import Credentials
+from gspread.exceptions import GSpreadException
+from gspread.utils import rowcol_to_a1
+
+from services.logging_config import subject_id
+
+logger = logging.getLogger(__name__)
+SHEET_ERRORS = (GSpreadException, GoogleAuthError)
 
 
 SCOPES = [
@@ -72,7 +81,9 @@ def find_row_by_phone(phone: str) -> LeadRow | None:
     for index, record in enumerate(records, start=2):
         row_phone = _normalize_phone(record.get("phone", ""))
         if row_phone and row_phone == phone_digits:
-            return LeadRow(row_number=index, data={key: str(value) for key, value in record.items()})
+            return LeadRow(
+                row_number=index, data={key: str(value) for key, value in record.items()}
+            )
 
     if not headers:
         return None
@@ -156,7 +167,7 @@ def update_lead(
         if val is not None:
             updates.append((col, val))
 
-    return _update_worksheet(sheet, phone, updates)
+    return _update_worksheet(sheet, phone, updates, row_number=row.row_number)
 
 
 def print_rows() -> None:
@@ -165,6 +176,7 @@ def print_rows() -> None:
 
 
 # --- Multi-course workbook helpers (outreach runner) ---
+
 
 def get_worksheet(worksheet_name: str, workbook_name: str | None = None):
     """Open a named tab from the Timmins Leads workbook (or any named workbook)."""
@@ -181,38 +193,53 @@ def get_rows_from(worksheet_name: str, workbook_name: str | None = None) -> list
     ]
 
 
-def _update_worksheet(ws, phone: str, updates: list[tuple[str, str]]) -> bool:
+def _update_worksheet(
+    ws,
+    phone: str,
+    updates: list[tuple[str, str]],
+    *,
+    row_number: int | None = None,
+) -> bool:
     """Write column updates for a phone number into any worksheet."""
-    raw_records = ws.get_all_records()
-    # Strip trailing spaces from header keys (Google Sheets often exports "phone ")
-    records = [{k.strip(): v for k, v in r.items()} for r in raw_records]
     headers = [h.strip() for h in ws.row_values(1)]
-    phone_digits = _normalize_phone(phone)
-
-    row_number: int | None = None
-    for index, record in enumerate(records, start=2):
-        # Check both 'phone' and 'whatsapp_number' columns
-        row_phone = _normalize_phone(
-            record.get("phone") or record.get("whatsapp_number", "")
-        )
-        if row_phone == phone_digits:
-            row_number = index
-            break
+    if row_number is None:
+        raw_records = ws.get_all_records()
+        # Strip trailing spaces from header keys (Google Sheets often exports "phone ")
+        records = [{k.strip(): v for k, v in r.items()} for r in raw_records]
+        phone_digits = _normalize_phone(phone)
+        for index, record in enumerate(records, start=2):
+            # Check both 'phone' and 'whatsapp_number' columns
+            row_phone = _normalize_phone(record.get("phone") or record.get("whatsapp_number", ""))
+            if row_phone == phone_digits:
+                row_number = index
+                break
 
     if row_number is None:
         return False
 
+    batch = []
     for column_name, value in updates:
         try:
             col_index = headers.index(column_name) + 1
         except ValueError:
             continue
-        ws.update_cell(row_number, col_index, value)
+        batch.append(
+            {
+                "range": rowcol_to_a1(row_number, col_index),
+                "values": [[value]],
+            }
+        )
+
+    if not batch:
+        return False
+    ws.batch_update(batch, value_input_option="RAW")
 
     return True
 
 
-def update_lead_in(phone: str, worksheet_name: str, workbook_name: str | None = None, **kwargs) -> bool:
+def update_lead_in(
+    phone: str, worksheet_name: str, workbook_name: str | None = None, **kwargs
+) -> bool:
     """Update a lead's columns in a specific worksheet tab."""
     ws = get_worksheet(worksheet_name, workbook_name)
     updates = [(k, str(v)) for k, v in kwargs.items() if v is not None]
@@ -221,7 +248,7 @@ def update_lead_in(phone: str, worksheet_name: str, workbook_name: str | None = 
     return _update_worksheet(ws, phone, updates)
 
 
-def find_phone_in_workbook(phone: str) -> str | None:
+def find_phone_in_workbook(phone: str) -> tuple[str, str] | None:
     """Search all tabs in the Timmins Leads workbook (and any extra workbook) for a phone number.
     Returns (workbook_name, worksheet_title) tuple, or None."""
     phone_digits = _normalize_phone(phone)
@@ -243,16 +270,28 @@ def find_phone_in_workbook(phone: str) -> str | None:
                 try:
                     records = ws.get_all_records()
                     for record in records:
-                        row_phone = _normalize_phone(str(
-                            record.get("phone") or record.get("phone ") or record.get("whatsapp_number", "")
-                        ))
+                        row_phone = _normalize_phone(
+                            str(
+                                record.get("phone")
+                                or record.get("phone ")
+                                or record.get("whatsapp_number", "")
+                            )
+                        )
                         if row_phone == phone_digits:
-                            print(f"SHEET LOOKUP: found {phone_digits} in workbook='{wb_name}' tab='{ws.title}'")
+                            logger.info(
+                                "event=sheet_lead_found workbook=%s worksheet=%s subject=%s",
+                                wb_name,
+                                ws.title,
+                                subject_id(phone),
+                            )
                             return (wb_name, ws.title)
-                except Exception:
+                except SHEET_ERRORS:
+                    logger.exception(
+                        "event=sheet_tab_scan_failed workbook=%s worksheet=%s", wb_name, ws.title
+                    )
                     continue
-        except Exception as e:
-            print(f"SHEET LOOKUP ERROR ({wb_name}):", e)
+        except SHEET_ERRORS:
+            logger.exception("event=sheet_workbook_scan_failed workbook=%s", wb_name)
     return None
 
 
@@ -307,6 +346,6 @@ def append_hot_lead(phone: str, lead: dict, updates: dict) -> bool:
         ws = get_worksheet(HOT_LEADS_TAB)
         ws.append_row(row, value_input_option="USER_ENTERED")
         return True
-    except Exception as e:
-        print("HOT LEADS TAB ERROR:", e)
+    except SHEET_ERRORS:
+        logger.exception("event=hot_lead_append_failed")
         return False

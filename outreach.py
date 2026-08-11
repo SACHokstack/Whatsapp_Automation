@@ -10,7 +10,7 @@ load_dotenv()
 
 from services.course_loader import get_course, load_courses
 from services.google_sheets import get_rows_from, update_lead_in
-from services.sqlite_store import add_message, upsert_lead
+from services.persistence import add_message, upsert_lead
 from services.whatsapp import send_template
 
 
@@ -30,12 +30,14 @@ def _clean(row: dict, *keys: str) -> str:
 
 
 def _detect_course_slug_from_row(row: dict, courses: dict) -> str | None:
-    """Detect course slug from ad_name or campaign_name column."""
-    ad_name = str(row.get("ad_name", "") or row.get("campaign_name", "") or "").lower()
+    """Detect course slug from ad_name, adset_name, or campaign_name column."""
+    ad_name = str(
+        row.get("ad_name", "") or row.get("adset_name", "") or row.get("campaign_name", "") or ""
+    ).lower()
     if not ad_name:
         return None
     for slug, course in courses.items():
-        for kw in (course.keywords or []):
+        for kw in course.keywords or []:
             if kw.lower() in ad_name:
                 return slug
     # Fallback abbreviations used in Meta ad names
@@ -69,11 +71,17 @@ def _detect_course_slug_from_row(row: dict, courses: dict) -> str | None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bulk WhatsApp outreach for a course")
     parser.add_argument("--course", required=True, help="Course slug (e.g. sw-testing-july-2026)")
-    parser.add_argument("--worksheet", default=None,
-                        help="Worksheet tab name to read from (for shared mixed sheets, e.g. 'Sheet1'). "
-                             "Defaults to the course's own tab.")
-    parser.add_argument("--workbook", default=None,
-                        help="Google Sheet workbook name (overrides TIMMINS_LEADS_WORKBOOK env var).")
+    parser.add_argument(
+        "--worksheet",
+        default=None,
+        help="Worksheet tab name to read from (for shared mixed sheets, e.g. 'Sheet1'). "
+        "Defaults to the course's own tab.",
+    )
+    parser.add_argument(
+        "--workbook",
+        default=None,
+        help="Google Sheet workbook name (overrides TIMMINS_LEADS_WORKBOOK env var).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print actions without sending")
     parser.add_argument("--limit", type=int, default=None, help="Max leads to process")
     args = parser.parse_args()
@@ -110,8 +118,7 @@ def main() -> None:
 
     # Pick up CREATED leads (or rows with no status yet)
     candidates = [
-        r for r in rows
-        if str(r.get(course.status_col, "")).strip().upper() in ("CREATED", "")
+        r for r in rows if str(r.get(course.status_col, "")).strip().upper() in ("CREATED", "")
     ]
 
     if args.limit:
@@ -133,15 +140,17 @@ def main() -> None:
             continue
 
         # Extract Meta Lead Ads fields — handle 'who_will_pay?' column name variant
-        job_title    = _clean(row, "job_title")
+        job_title = _clean(row, "job_title")
         company_name = _clean(row, "company_name")
         who_will_pay = _clean(row, "who_will_pay", "who_will_pay?")
-        email        = _clean(row, "email")
+        email = _clean(row, "email")
 
         if args.dry_run:
             print(f"  [DRY RUN] would send to {phone} ({name})")
             if job_title:
-                print(f"            job_title={job_title!r}  company={company_name!r}  who_pays={who_will_pay!r}")
+                print(
+                    f"            job_title={job_title!r}  company={company_name!r}  who_pays={who_will_pay!r}"
+                )
             sent += 1
             continue
 
@@ -172,7 +181,9 @@ def main() -> None:
                 msg_id = response.json().get("messages", [{}])[0].get("id")
             except Exception:
                 msg_id = None
-            add_message(phone, direction="outbound", body=course.outreach_template, message_id=msg_id)
+            add_message(
+                phone, direction="outbound", body=course.outreach_template, message_id=msg_id
+            )
             print(f"  SENT   {phone} ({name})")
             sent += 1
         else:

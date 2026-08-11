@@ -1,29 +1,37 @@
 from __future__ import annotations
 
+import logging
 import os
-import time
 
 import requests
 
-
 session = requests.Session()
+logger = logging.getLogger(__name__)
+
+
+def _api_version() -> str:
+    return os.getenv("WHATSAPP_API_VERSION", "v25.0").strip() or "v25.0"
+
+
+def _messages_url() -> str:
+    return f"https://graph.facebook.com/{_api_version()}/{_phone_number_id()}/messages"
+
 
 # Simulate human typing: wait this many seconds before sending a reply.
 # Configurable via REPLY_DELAY_SECONDS env var (default 2).
 def _reply_delay() -> float:
     try:
-        return float(os.getenv("REPLY_DELAY_SECONDS", "2"))
+        return min(max(float(os.getenv("REPLY_DELAY_SECONDS", "2")), 0.0), 30.0)
     except ValueError:
         return 2.0
 
 
 def mark_read(message_id: str) -> None:
     """Send read receipt so the lead sees blue ticks immediately."""
-    phone_number_id = _phone_number_id()
     access_token = _access_token()
     try:
         session.post(
-            f"https://graph.facebook.com/v25.0/{phone_number_id}/messages",
+            _messages_url(),
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
@@ -35,8 +43,8 @@ def mark_read(message_id: str) -> None:
             },
             timeout=10,
         )
-    except Exception:
-        pass
+    except requests.RequestException:
+        logger.exception("event=whatsapp_mark_read_failed")
 
 
 def _phone_number_id() -> str:
@@ -57,10 +65,9 @@ def _access_token() -> str:
 
 
 def send_text(to: str, body: str) -> requests.Response:
-    phone_number_id = _phone_number_id()
     access_token = _access_token()
     response = session.post(
-        f"https://graph.facebook.com/v25.0/{phone_number_id}/messages",
+        _messages_url(),
         headers={
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
@@ -81,11 +88,21 @@ def send_template(
     template_name: str,
     language_code: str = "en_US",
     variables: list[str] | None = None,
+    named_variables: dict[str, str] | None = None,
 ) -> requests.Response:
-    phone_number_id = _phone_number_id()
     access_token = _access_token()
     components = []
-    if variables:
+    if named_variables:
+        components.append(
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "parameter_name": k, "text": v}
+                    for k, v in named_variables.items()
+                ],
+            }
+        )
+    elif variables:
         components.append(
             {
                 "type": "body",
@@ -93,7 +110,7 @@ def send_template(
             }
         )
     response = session.post(
-        f"https://graph.facebook.com/v25.0/{phone_number_id}/messages",
+        _messages_url(),
         headers={
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
@@ -110,8 +127,9 @@ def send_template(
         },
         timeout=30,
     )
-    print(response.status_code)
-    print(response.text)
+    logger.info(
+        "event=whatsapp_template_sent status_code=%s ok=%s", response.status_code, response.ok
+    )
     return response
 
 
@@ -125,10 +143,10 @@ def send_template_and_mark_contacted(
     if response.ok:
         try:
             from services.google_sheets import update_lead
-            from services.sqlite_store import add_message, upsert_lead
+            from services.persistence import add_message, upsert_lead
 
-            update_lead(to, status="CONTACTED", last_message=template_name)
-            upsert_lead(to, status="CONTACTED", last_message=template_name)
+            update_lead(to, status="CONTACTED", last_reply=template_name)
+            upsert_lead(to, status="CONTACTED", last_reply=template_name)
             add_message(
                 to,
                 direction="outbound",
@@ -137,6 +155,6 @@ def send_template_and_mark_contacted(
                 if response.headers.get("content-type", "").startswith("application/json")
                 else None,
             )
-        except Exception:
-            pass
+        except (ValueError, KeyError, requests.RequestException):
+            logger.exception("event=whatsapp_contact_state_update_failed")
     return response
