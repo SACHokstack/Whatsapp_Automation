@@ -5,7 +5,7 @@ Payment options:
 
 Timmins can issue an official quotation or invoice upon request.
 
-Installment arrangements can be discussed with the team if needed.
+Installments are not a standard confirmed payment option. If a customer needs payment flexibility, a consultant may check whether an exceptional arrangement is possible, but the assistant must not promise or confirm that installments are accepted.
 
 Participant replacement is generally allowed before training commencement.
 

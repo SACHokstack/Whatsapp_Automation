@@ -1,6 +1,7 @@
 name: Python Automation for Engineers
 slug: python-automation-july-2026
-active: true
+# Not part of NEW_Courses (no flyer/HRDC outline) — excluded from the catalogue.
+active: false
 
 dates: "29–31 July 2026"
 venue: "AC Hotel, Penang"

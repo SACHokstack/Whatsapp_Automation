@@ -1,6 +1,6 @@
 name: Modern Software Testing with AI-Assisted Automation & CI/CD Integration
 slug: sw-testing-july-2026
-active: true
+active: false
 
 dates: "6–9 July 2026"
 venue: "Ibis PJCC, Petaling Jaya"
@@ -27,10 +27,6 @@ keywords:
   - api testing
   - ui automation
   - automation framework
-  - course content
-  - curriculum
-  - syllabus
-  - who should attend
   - chatgpt
   - github copilot
   - copilot

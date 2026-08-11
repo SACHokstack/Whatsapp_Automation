@@ -16,5 +16,8 @@ The training fee includes:
 - Electronic certificate
 - Hands-on exercises and labs
 
+Food and refreshments are provided at no extra cost: lunch is served each day, along with
+morning and afternoon tea breaks with light snacks (food and drinks during the training).
+
 ---
 If the lead asks what certification they will get, mention both printed and electronic completion certificates.

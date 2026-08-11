@@ -1,4 +1,11 @@
 SECTION X – EMBEDDED LINUX DEBUGGING & PERFORMANCE OPTIMIZATION KNOWLEDGE BASE
+Course syllabus:
+This hands-on course develops a structured approach to diagnosing production Embedded Linux failures and improving system stability and performance.
+- Boot troubleshooting across U-Boot, the Linux kernel, root filesystem, and Device Tree
+- Kernel panic, crash, system hang, and log analysis using dmesg and journalctl
+- CPU, memory, I/O, and boot-time profiling and optimization using top, htop, perf, ftrace, and strace
+- Memory-leak detection and hardware-interface troubleshooting for I²C, SPI, and UART
+- Fault-based practical labs on BeagleBone Black, including failed boots, kernel panics, high CPU usage, leaks, hangs, and crashes under load
 Q1. What is this course about?
 Answer:
 Embedded Linux Debugging & Performance Optimization is a 3-day hands-on training that teaches engineers how to diagnose, troubleshoot, and optimize Embedded Linux systems running in real production environments.

@@ -40,7 +40,7 @@ Practical outcomes:
 - Debug C programs using GDB breakpoints, watchpoints, and stack inspection
 - Build the embedded C foundation needed for firmware and Linux driver development
 
-Investment: RM 3,000 per participant. Group discount available for minimum 3 pax. HRDC claimable.
+Investment: RM 3,200 per participant. Group discount available for minimum 3 pax. HRDC claimable.
 
 SECTION X – EMBEDDED C PROGRAMMING & GDB DEBUGGING KNOWLEDGE BASE
 Q1. What is this course about?

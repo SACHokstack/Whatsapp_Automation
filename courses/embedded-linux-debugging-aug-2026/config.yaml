@@ -1,6 +1,7 @@
 name: Embedded Linux Debugging and Performance Optimization
 slug: embedded-linux-debugging-aug-2026
-active: true
+# Not part of NEW_Courses (no flyer/HRDC outline) — excluded from the catalogue.
+active: false
 
 dates: "17–19 August 2026"
 venue: "Timmins Training Center, Penang"

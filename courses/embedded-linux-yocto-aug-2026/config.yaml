@@ -37,6 +37,8 @@ keywords:
   - penang
 
 outreach:
+  ad_ids:
+    - "120251593530460721"
   worksheet_name: "Embedded Linux Yocto"
   template_name: "timmins_embedded_linux_yocto_intro"
   template_language: "en"

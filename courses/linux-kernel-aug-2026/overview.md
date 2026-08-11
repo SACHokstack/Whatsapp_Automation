@@ -46,7 +46,7 @@ Practical outcomes:
 - Exchange data safely between user applications and kernel drivers
 - Implement interrupt handling and deferred work mechanisms
 
-Investment: RM 3,000 per participant. Group discount available for minimum 3 pax. HRDC claimable.
+Investment: RM 3,200 per participant. Group discount available for minimum 3 pax. HRDC claimable.
 
 SECTION X – LINUX KERNEL PROGRAMMING KNOWLEDGE BASE
 Q1. What is this course about?

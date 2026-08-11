@@ -37,6 +37,8 @@ keywords:
   - penang
 
 outreach:
+  ad_ids:
+    - "120251196291790721"
   worksheet_name: "Embedded Linux Internals"
   template_name: "timmins_embedded_linux_internals_intro"
   template_language: "en"

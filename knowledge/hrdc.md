@@ -1,5 +1,9 @@
 # HRDC
 
+HRD Corp is Malaysia's Human Resource Development Corporation. In the training context,
+registered employers can apply through the e-TRiS portal to use eligible HRD levy funds for
+approved employee retraining and upskilling.
+
 Timmins Training delivers HRDC-registered training programs and can provide HRDC registration details upon request.
 
 How to apply for an HRDC grant:

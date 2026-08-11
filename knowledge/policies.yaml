@@ -1,0 +1,39 @@
+payment:
+  methods:
+    - Bank transfer
+  installments_confirmed: false
+  installments_note: >-
+    A consultant may check whether an exceptional arrangement is possible, but it must not be
+    promised or presented as a standard option.
+  documents:
+    - Official quotation
+    - Invoice
+
+cancellation:
+  tiers:
+    - window: More than 14 days before training
+      charge: No cancellation fee
+    - window: 7–13 days before training
+      charge: A 50% cancellation fee may apply
+    - window: Less than 7 days before training
+      charge: The full fee may apply
+
+certification:
+  certificates:
+    - Printed certificate of completion
+    - Electronic certificate of completion
+  included:
+    - PDF training materials
+    - Morning and afternoon refreshments
+    - Lunch
+    - Hands-on exercises and labs
+
+company:
+  name: Timmins Training & Consulting Sdn. Bhd.
+  description: >-
+    a Malaysia-based corporate training and consulting company specialising in engineering,
+    software, technology, AI, data analytics and professional development programs.
+  email: info@timmins-consulting.com
+  phone: "+60 14-395 3661"
+  approved_domains:
+    - timmins-consulting.com

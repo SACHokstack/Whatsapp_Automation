@@ -63,7 +63,7 @@ Practical outcomes:
 - Implement interrupt handling with deferred work
 - Debug kernel-level issues using professional Linux tools
 
-Investment: RM 7,800 per participant. Group discount available for minimum 3 pax. 100% HRDC claimable.
+Investment: RM 7,500 per participant. Group discount available for minimum 3 pax. 100% HRDC claimable.
 
 Below is a knowledge base in the same style as your Software Testing Knowledge Base, optimized for your WhatsApp AI assistant. It is written so it can be plugged directly into your Layer 3 (Course Knowledge Base).
 SECTION X – EMBEDDED LINUX SYSTEM INTERNALS KNOWLEDGE BASE
