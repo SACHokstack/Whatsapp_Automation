@@ -126,6 +126,12 @@ def _mentioned_courses(message: str) -> list[object]:
             aliases.update({"linux system internals", "system internals"})
         if "yocto" in item_lower:
             aliases.update({"yocto course", "embedded linux with yocto"})
+        # "the embedded linux course" names a family, not one course. Matching it on the
+        # embedded-Linux courses lets a comparison proceed with the closest one instead of
+        # refusing; without this, "difference between this and embedded linux" resolved to
+        # nothing and asked the customer to name both courses they had just named.
+        if "embedded linux" in item_lower:
+            aliases.update({"embedded linux", "embedded linux course"})
         if "linux kernel" in item_lower:
             aliases.update({"linux kernel course", "kernel programming"})
         if "python automation" in item_lower:

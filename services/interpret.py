@@ -524,6 +524,11 @@ def deterministic_plan(
     comparison_question = bool(
         re.search(
             r"\b(?:how is|what makes|what is)\b.*\b(?:different|difference)\b.*\b(?:course|embedded|linux|c|yocto|python|testing)\b|"
+            # Natural phrasings the pattern above misses: the contraction ("what's the
+            # difference"), the bare form ("difference between X and Y"), and "how does X
+            # compare". These fell through to a catalogue listing instead of a comparison.
+            r"\b(?:what'?s|what is)\s+the\s+difference\b|\bdifference between\b|"
+            r"\bhow does\b.{0,40}\bcompare\b|"
             r"\b(?:compare|versus|vs\.?|which is better)\b",
             normalized,
         )
@@ -596,7 +601,9 @@ def deterministic_plan(
     # "which course is beginner friendly" matches the generic "which ... course" catalogue
     # pattern too, which appended the whole course list after the fit answer. A fit question
     # is asking which course SUITS them, not for a browse.
-    catalog = (catalog_explicit or (catalog_category and not specific_fact)) and not beginner_fit
+    catalog = (catalog_explicit or (catalog_category and not specific_fact)) and not (
+        beginner_fit or comparison_question
+    )
     trainer_question = bool(
         re.search(
             r"\b(?:trainer|trainers|instructor|facilitator)\b|\bwho (?:teaches|is teaching)\b",

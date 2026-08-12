@@ -20,18 +20,22 @@ from services.interpret import deterministic_plan
 
 
 class ConversationTests(unittest.TestCase):
-    def test_first_contact_fee_question_without_course_asks_for_course(self):
+    def test_first_contact_fee_question_without_course_offers_a_picker(self):
         reply, updates = main._process_conversation("What is the fee?", {"status": "CONTACTED"})
-        self.assertIn("Which course", reply)
-        self.assertIsNone(updates)
+        self.assertIn("which course", reply.lower())
+        # A numbered list, not a bare question the customer has to answer blind
+        self.assertIn("1. ", reply)
+        # ...and the ask is remembered, so the choice can be answered rather than re-asked
+        self.assertTrue(updates["conversation_state"].startswith("ASKING_COURSE_SELECT"))
 
-    def test_day_question_without_course_asks_for_course(self):
+    def test_day_question_without_course_offers_a_picker(self):
         plan = deterministic_plan("what is on day one")
         reply, updates = main._process_conversation(
             "what is on day one", {"status": "CONTACTED"}, plan=plan
         )
-        self.assertIn("Which course", reply)
-        self.assertIsNone(updates)
+        self.assertIn("which course", reply.lower())
+        self.assertIn("1. ", reply)
+        self.assertTrue(updates["conversation_state"].startswith("ASKING_COURSE_SELECT"))
 
     def test_general_kb_plan_is_not_scoped_to_selected_course(self):
         course = get_course("embedded-linux-internals-aug-2026")
@@ -377,8 +381,9 @@ class ConversationTests(unittest.TestCase):
         reply, updates = main._process_conversation(
             "Tell me about the course fee", {"status": "ENGAGED"}, None
         )
-        self.assertIn("Which course", reply)
-        self.assertIsNone(updates)
+        self.assertIn("which course", reply.lower())
+        self.assertIn("1. ", reply)
+        self.assertTrue(updates["conversation_state"].startswith("ASKING_COURSE_SELECT"))
 
     def test_new_ad_ids_resolve_hidden_course(self):
         internals = main._detect_course_from_referral({"source_id": "120251196291790721"})

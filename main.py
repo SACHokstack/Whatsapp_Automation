@@ -27,6 +27,7 @@ from services.conversation_controller import decide_reply
 from services.course_loader import (
     detect_course,
     detect_explicit_course,
+    get_active_courses,
     get_course,
     load_courses,
 )
@@ -1050,7 +1051,10 @@ _SLOT_QUESTION = {
 
 
 def _pending_slot(lead: dict | None) -> str | None:
-    return _SLOT_QUESTION.get(_get_state(lead or {}))
+    state = _get_state(lead or {})
+    if state.startswith(_COURSE_SELECT_STATE):
+        return "which course they are asking about"
+    return _SLOT_QUESTION.get(state)
 
 
 def _plan_wants_human(plan) -> bool:
@@ -1698,6 +1702,117 @@ def _get_state(lead: dict) -> str:
     return (lead.get("conversation_state") or lead.get("qualification_step") or "").strip().upper()
 
 
+_COURSE_SELECT_STATE = "ASKING_COURSE_SELECT"
+
+# Intents whose answer differs per course, so they cannot be answered until we know which one.
+_COURSE_SCOPED_INTENTS = {
+    "FEES",
+    "SCHEDULE",
+    "VENUE",
+    "DURATION",
+    "HRDC",
+    "CERTIFICATION",
+    "BATCH_SIZE",
+    "PLACEMENT",
+    "REQUIREMENTS",
+    "TRAINER",
+    "ONLINE",
+    "COURSE_CONTENT",
+}
+
+
+def _course_picker(intent_hint: str | None = None) -> str:
+    """A numbered list to choose from, instead of asking "which course?" over and over."""
+    courses = get_active_courses()
+    lines = [f"{index}. {item.name}" for index, item in enumerate(courses, start=1)]
+    subject = {
+        "FEES": "the fee",
+        "SCHEDULE": "the dates",
+        "DURATION": "the duration",
+        "VENUE": "the venue",
+        "CERTIFICATION": "certification",
+        "TRAINER": "the trainer",
+        "REQUIREMENTS": "the prerequisites",
+        "BATCH_SIZE": "the class size",
+        "COURSE_CONTENT": "what it covers",
+    }.get(intent_hint or "", "the details")
+    return (
+        f"Happy to give you {subject} — which course did you mean?\n\n"
+        + "\n".join(lines)
+        + "\n\nJust reply with the number or the course name."
+    )
+
+
+def _course_from_selection(message: str):
+    """Resolve a picker reply: a number, or a course named in words."""
+    courses = get_active_courses()
+    picked = re.fullmatch(r"\s*(\d{1,2})\s*[.)]?\s*", message or "")
+    if picked:
+        index = int(picked.group(1))
+        if 1 <= index <= len(courses):
+            return courses[index - 1]
+        return None
+    return detect_explicit_course(message) or detect_course(message)
+
+
+def _course_select_pending(state: str) -> str | None:
+    """The intent we were about to answer, parked in the state string as
+    "ASKING_COURSE_SELECT:FEES" so it needs no extra database column."""
+    if not state.startswith(_COURSE_SELECT_STATE):
+        return None
+    _, _, intent = state.partition(":")
+    return intent or "UNKNOWN"
+
+
+_FUNDING_STATEMENTS = (
+    (
+        "Company/HRDC",
+        r"\b(?:my|our)\s+(?:company|employer|organisation|organization)\b|"
+        r"\b(?:company|employer|organisation|organization)\s+(?:will|is|would|can)\b|"
+        r"\bhrdc\s+(?:will\s+)?(?:cover|claim|fund|sponsor)|\bcompany[- ]sponsored\b|"
+        r"\bsponsored\s+by\s+(?:my|our|the)\s+(?:company|employer)\b",
+    ),
+    (
+        "Self-pay",
+        r"\bself[\s-]?(?:pay|paying|paid|funded|sponsored|sponsor)\b|"
+        r"\bpaying\s+(?:for\s+)?(?:it\s+)?myself\b|\bmy\s+own\s+(?:pocket|expense|money)\b|"
+        r"\bi\s+(?:will|'ll|am|am going to)\s+(?:be\s+)?pay(?:ing)?\b",
+    ),
+)
+
+
+def _funding_from_statement(message: str) -> str | None:
+    """Funding volunteered as a STATEMENT, e.g. "my company will pay for it".
+
+    Questions are excluded: "is it HRDC claimable?" asks for a fact and must still be
+    answered, not silently recorded as this lead's funding path.
+    """
+    text = (message or "").strip().lower()
+    if not text or "?" in text:
+        return None
+    if re.match(r"^(?:is|are|can|could|do|does|did|will|would|what|how|when|who|why)\b", text):
+        return None
+    for value, pattern in _FUNDING_STATEMENTS:
+        if re.search(pattern, text):
+            return value
+    return None
+
+
+def _reprompt_for_state(state: str, lead: dict, course) -> str | None:
+    """Re-ask the question the lead is currently on."""
+    if state == "ASKING_EXPERIENCE_YEARS":
+        return _experience_years_prompt(lead)
+    if state == "ASKING_TECHNOLOGIES":
+        return _technologies_prompt(lead, course)
+    if state == "ASKING_MOTIVATION":
+        return _motivation_prompt()
+    if state == "ASKING_LEARNING_GOALS":
+        return _learning_goals_prompt(course)
+    if state == "ASKING_AVAILABILITY":
+        return _availability_prompt()
+    return None
+
+
 def _state_update(state: str, **extra) -> dict:
     return {
         "status": state,
@@ -2018,22 +2133,7 @@ def _process_conversation(
         "tell me about the course",
     )
     plan_requires_course = plan is not None and any(
-        request.course_slug is None
-        and request.intent
-        in {
-            "FEES",
-            "SCHEDULE",
-            "VENUE",
-            "DURATION",
-            "HRDC",
-            "CERTIFICATION",
-            "BATCH_SIZE",
-            "PLACEMENT",
-            "REQUIREMENTS",
-            "TRAINER",
-            "ONLINE",
-            "COURSE_CONTENT",
-        }
+        request.course_slug is None and request.intent in _COURSE_SCOPED_INTENTS
         for request in plan.requests
     )
     if (
@@ -2041,10 +2141,57 @@ def _process_conversation(
         and (plan_requires_course or any(signal in msg_lower for signal in course_specific_signals))
         and not _is_course_catalog_question(message)
     ):
+        # Some asks have a company-level answer that needs no course at all — HRDC
+        # claimability, who Timmins is. Try that FIRST; asking "which course?" for a question
+        # we can already answer is the dead-end a general enquirer kept hitting.
+        if plan is not None and any(
+            exact_answer(request.intent, None, message=message) for request in plan.requests
+        ):
+            return None, None
+
+        # Otherwise ask — but with a numbered list, and remember what they were asking so the
+        # answer can be delivered once they choose. Never while a qualification slot is open,
+        # or "3" would be ambiguous between a course number and years of experience.
+        if state not in _ACTIVE_STATES:
+            pending_intent = next(
+                (r.intent for r in plan.requests if r.intent in _COURSE_SCOPED_INTENTS),
+                "UNKNOWN",
+            ) if plan is not None else "UNKNOWN"
+            return (
+                _course_picker(pending_intent),
+                {
+                    "conversation_state": f"{_COURSE_SELECT_STATE}:{pending_intent}",
+                    "qualification_step": f"{_COURSE_SELECT_STATE}:{pending_intent}",
+                },
+            )
         return (
             "I can help with that, but I don't want to give you details for the wrong course. Which course are you interested in?",
             None,
         )
+
+    # Waiting on a course choice from the picker. "software testing" or "2" is a selection,
+    # not a new question — resolve it, then answer what they originally asked.
+    pending_course_intent = _course_select_pending(state)
+    if pending_course_intent is not None:
+        chosen = _course_from_selection(message)
+        if chosen is None:
+            return (
+                "Sorry, I didn't catch which course that was.\n\n"
+                + _course_picker(pending_course_intent),
+                None,
+            )
+        cleared = {"conversation_state": "", "qualification_step": "", "course": chosen.slug}
+        # Answer here rather than deferring: the caller applies these updates only AFTER the
+        # reply is generated, so handing the turn onward would answer with no course again.
+        answer = exact_answer(pending_course_intent, chosen, message=message)
+        if not answer and pending_course_intent == "COURSE_CONTENT":
+            answer = _deterministic_reply(message, chosen, history=None, catalog=False)
+        if not answer:
+            answer = (
+                f"Great — {chosen.name}. What would you like to know: the fee, the dates, "
+                "or what it covers?"
+            )
+        return answer, cleared
 
     if state in _ACTIVE_STATES and msg_lower in {"no", "nope", "nah"}:
         return (
@@ -2070,6 +2217,20 @@ def _process_conversation(
     # Answer vs consume-as-slot-answer: the plan (understanding) is authoritative here.
     # Only fall back to the keyword heuristic when the interpreter is unavailable.
     if state in _ACTIVE_STATES:
+        # Funding volunteered out of order ("my company will pay for it" while we are asking
+        # about tools) is an answer to a question we have not reached yet — not a request for
+        # payment terms. Without this it fell through to the PAYMENT intent, which replied
+        # "payment is by bank transfer", recorded nothing, and left the flow stuck on the
+        # current slot forever.
+        if state != "ASKING_FUNDING_PATH" and not (lead.get("funding_path") or "").strip():
+            volunteered = _funding_from_statement(message)
+            reprompt = _reprompt_for_state(state, lead, course) if volunteered else None
+            if volunteered and reprompt:
+                return (
+                    f"Noted — {'your company/HRDC' if volunteered == 'Company/HRDC' else 'self-funded'}. "
+                    f"{reprompt}",
+                    {"funding_path": volunteered},
+                )
         if plan is not None:
             if plan.control == "none" and not plan.answers_pending_slot:
                 return None, None
@@ -2107,12 +2268,20 @@ def _process_conversation(
         return None, None
 
     if state == "ASKING_EXPERIENCE_YEARS":
-        years = message.strip()
-        if not years:
+        raw = message.strip()
+        if not raw:
             return "Could you share how many years of experience you have?", None
-        return _technologies_prompt(lead, course), _state_update(
-            "ASKING_TECHNOLOGIES", experience_years=years
+        # "I am a QA engineer with 3 years experience" must store 3, not the whole sentence —
+        # experience_years feeds the lead score. The sentence still has value as background,
+        # so keep it in `experience` rather than throwing it away.
+        parsed = _extract_int(raw)
+        updates = _state_update(
+            "ASKING_TECHNOLOGIES",
+            experience_years=str(parsed) if parsed is not None else raw,
         )
+        if parsed is not None and raw != str(parsed):
+            updates["experience"] = raw
+        return _technologies_prompt(lead, course), updates
 
     if state == "ASKING_TECHNOLOGIES":
         tech = message.strip()
