@@ -61,6 +61,19 @@ EXACT_INTENTS = {
 }
 # Intents that answer from the whole catalog (course=None) rather than one course.
 CATALOG_INTENTS = {"CATALOG", "RECOMMENDATION", "TRAINER_CATALOG"}
+
+# Skill vocabulary grouped by the course domain it belongs to. Used only to tell a
+# single-domain background ("i know selenium") from one that spans several ("i know c, cpp
+# and selenium"), where no single course is the obvious answer.
+_SKILL_DOMAINS = {
+    "testing": r"\b(?:selenium|playwright|cypress|appium|junit|testng|jmeter|postman|"
+    r"qa|test automation|manual testing|automation testing)\b",
+    "systems": r"\b(?:c|c\+\+|cpp|embedded|firmware|rtos|microcontroller|mcu|"
+    r"device driver|drivers?|kernel|yocto|bitbake|u-boot|uboot|linux)\b",
+    "scripting": r"\b(?:python|bash|shell scripting|perl|ruby)\b",
+    "web": r"\b(?:javascript|typescript|react|angular|node|php|html|css)\b",
+    "data": r"\b(?:sql|pandas|numpy|machine learning|data science|tableau|power bi)\b",
+}
 VALID_INTENTS = (
     EXACT_INTENTS
     | CATALOG_INTENTS
@@ -286,10 +299,13 @@ def deterministic_plan(
         )
 
     # Recommendation / "which is best|cheapest|for me" — never a single-course fact.
+    # Price SUPERLATIVES compare across the catalogue ("which is the most expensive"), unlike
+    # "how much is it", which is a FEES question about one course and is handled separately.
     if re.search(
         r"\b(?:recommend|suggest)\b|\bwhat should i (?:take|choose|do|learn)\b|"
         r"\bwhich (?:course|one|training|program)\b.{0,30}\b(?:best|suit|cheapest|right|for me|should)\b|"
-        r"\bbest (?:course|option|one) for me\b|\bcheapest\b",
+        r"\bbest (?:course|option|one) for me\b|\bcheapest\b|\bpriciest\b|"
+        r"\b(?:most|least)\s+(?:expensive|affordable|costly|pricey)\b|\bbest value\b",
         normalized,
     ):
         return TurnPlan(
@@ -297,6 +313,36 @@ def deterministic_plan(
             (Request("RECOMMENDATION", None, "exact", normalized),),
             0.99, "rule:recommendation",
         )
+
+    # "i know c, cpp and selenium" — a background spanning MORE THAN ONE domain has no single
+    # obvious course, so it is a recommendation question even though nothing was asked outright.
+    # A single-domain background ("i know selenium") is left alone: it may be leading somewhere
+    # specific, and the interpreter can read the intent better than a keyword rule can.
+    if re.search(
+        r"\bi\s+(?:know|use[d]?|have\s+used|work(?:ed)?\s+(?:with|on|in)|"
+        r"am\s+familiar\s+with|have\s+experience\s+(?:in|with))\b|"
+        r"\bmy\s+background\s+(?:is|in)\b",
+        normalized,
+    ) and not re.search(
+        # A background that also asks something outright ("...and what is the fee") is a
+        # compound turn: leave it to the interpreter, which can answer both parts, rather
+        # than short-circuiting to a recommendation and dropping the question.
+        r"\bdo you (?:have|offer|provide|teach|run|conduct)\b|"
+        r"\b(?:fees?|price|cost|how much|when|dates?|schedule|where|venue|"
+        r"how long|duration|trainer|hrdc|claimable|syllabus|curriculum)\b",
+        normalized,
+    ):
+        domains = {
+            domain
+            for domain, pattern in _SKILL_DOMAINS.items()
+            if re.search(pattern, normalized)
+        }
+        if len(domains) >= 2:
+            return TurnPlan(
+                control, False,
+                (Request("RECOMMENDATION", None, "exact", normalized),),
+                0.99, "rule:mixed-background",
+            )
 
     # Interest in a topic/category with no specific course selected → show the catalog
     # (rather than falling to the LLM and intermittently abstaining, as the demo did).
@@ -547,7 +593,10 @@ def deterministic_plan(
             normalized,
         )
     )
-    catalog = catalog_explicit or (catalog_category and not specific_fact)
+    # "which course is beginner friendly" matches the generic "which ... course" catalogue
+    # pattern too, which appended the whole course list after the fit answer. A fit question
+    # is asking which course SUITS them, not for a browse.
+    catalog = (catalog_explicit or (catalog_category and not specific_fact)) and not beginner_fit
     trainer_question = bool(
         re.search(
             r"\b(?:trainer|trainers|instructor|facilitator)\b|\bwho (?:teaches|is teaching)\b",
