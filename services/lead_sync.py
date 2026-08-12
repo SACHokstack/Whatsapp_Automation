@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 # outreach never picks them up — they were handled by hand before the bot went live.
 BASELINE_STATUS = "PRE_LAUNCH"
 
+# Statuses meaning "still waiting on first contact". Canonical here; auto_outreach reads it.
+PENDING_STATUSES = ("CREATED", "")
+
 # Columns we carry from the source row (also the Google Sheet tab's header order)
 LEAD_COLUMNS = [
     "phone",
@@ -248,6 +251,7 @@ class SyncResult:
     skipped_invalid: int = 0
     unmatched: int = 0
     baseline: int = 0  # imported pre-cutoff, so never auto-contacted
+    rebaselined: int = 0  # already in the db awaiting contact, demoted by the cutoff
     added_phones: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -260,6 +264,7 @@ class SyncResult:
             "skipped_invalid": self.skipped_invalid,
             "unmatched": self.unmatched,
             "baseline": self.baseline,
+            "rebaselined": self.rebaselined,
             "added_phones": self.added_phones,
         }
 
@@ -311,14 +316,23 @@ def sync_leads(
                 )
                 continue
 
-            existing = get_lead(phone)
-            if existing and not update:
-                result.skipped_existing += 1
-                continue
-
             # Pre-cutoff leads were contacted by hand before the bot went live
             baseline = _predates_cutoff(row, cutoff)
             new_status = BASELINE_STATUS if baseline else lead["lead_status"]
+
+            existing = get_lead(phone)
+            if existing and not update:
+                # Self-healing: a pre-cutoff lead still awaiting first contact was imported
+                # before the cutoff was configured. Demote it now, or turning outreach on
+                # would message the whole pre-launch backlog. Only touches leads that have
+                # never been contacted — CONTACTED/ENGAGED/in-flight ones are left alone.
+                if baseline and existing.get("status", "").upper() in PENDING_STATUSES:
+                    if not dry_run:
+                        upsert_lead(phone, status=BASELINE_STATUS)
+                    result.rebaselined += 1
+                    emit("rebaselined", f"{phone} ({name}) → {BASELINE_STATUS}")
+                result.skipped_existing += 1
+                continue
 
             if dry_run:
                 result.added += 1

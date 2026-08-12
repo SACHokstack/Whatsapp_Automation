@@ -23,13 +23,12 @@ from zoneinfo import ZoneInfo
 import requests
 
 from services.course_loader import get_active_courses, get_course
+from services.lead_sync import PENDING_STATUSES  # noqa: F401  (re-exported for callers)
 from services.persistence import add_message, list_leads, upsert_lead
 from services.whatsapp import send_template
 
 logger = logging.getLogger(__name__)
 
-# Leads that never got a status, or are waiting on first contact
-PENDING_STATUSES = ("CREATED", "")
 FAILED_STATUS = "OUTREACH_FAILED"
 
 

@@ -38,7 +38,7 @@ def _stamp() -> str:
 
 
 def _event(kind: str, message: str) -> None:
-    if kind in ("new", "updated", "invalid", "unmatched"):
+    if kind in ("new", "updated", "invalid", "unmatched", "rebaselined"):
         print(f"  {kind.upper():9} {message}")
 
 
@@ -51,7 +51,8 @@ def _run_once(excel_path: Path | None, *, dry_run: bool, update: bool, verbose: 
     )
     print(
         f"[{_stamp()}] scanned={result.scanned} new={result.added} "
-        f"(pre-cutoff baseline={result.baseline}) updated={result.updated} "
+        f"(pre-cutoff baseline={result.baseline}) rebaselined={result.rebaselined} "
+        f"updated={result.updated} "
         f"already-known={result.skipped_existing} invalid={result.skipped_invalid} "
         f"unmatched={result.unmatched}"
     )

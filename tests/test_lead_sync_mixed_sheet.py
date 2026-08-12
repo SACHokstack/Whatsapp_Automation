@@ -118,6 +118,51 @@ class MixedSheetTests(unittest.TestCase):
         # The decisive check: the old lead is not in a status outreach will pick up
         self.assertNotIn(get_lead(self.phones[0])["status"], PENDING_STATUSES)
 
+    def test_cutoff_demotes_leads_imported_before_it_was_configured(self):
+        """The live case: leads synced with no cutoff sit at CREATED and would all be
+        messaged the moment outreach is switched on. Setting the cutoff must clear them."""
+        from services.lead_sync import BASELINE_STATUS
+        from services.persistence import upsert_lead
+
+        rows = [
+            _export_row("Ads 8 - ELSI - x", "Awaiting", self.phones[0]),
+            _export_row("Ads 8 - ELSI - x", "Already Contacted", self.phones[1]),
+            _export_row("Ads 8 - ELSI - x", "Replied", self.phones[2]),
+        ]
+        for row in rows:
+            row["created_time"] = "2026-07-04T06:24:13-05:00"
+        self.rows = rows
+
+        # Imported earlier, before any cutoff existed
+        sync_leads()
+        self.assertEqual("CREATED", get_lead(self.phones[0])["status"])
+        upsert_lead(self.phones[1], status="CONTACTED")
+        upsert_lead(self.phones[2], status="ENGAGED")
+
+        with unittest.mock.patch.dict(
+            "os.environ", {"LEAD_SYNC_CONTACT_CUTOFF": "2026-08-15T00:00:00+00:00"}
+        ):
+            result = sync_leads()
+
+        self.assertEqual(1, result.rebaselined)
+        self.assertEqual(BASELINE_STATUS, get_lead(self.phones[0])["status"])
+        # An outreach that already happened, and a live conversation, must not be rewritten
+        self.assertEqual("CONTACTED", get_lead(self.phones[1])["status"])
+        self.assertEqual("ENGAGED", get_lead(self.phones[2])["status"])
+
+    def test_rebaseline_is_reported_but_not_written_on_a_dry_run(self):
+        rows = [_export_row("Ads 8 - ELSI - x", "Awaiting", self.phones[0])]
+        rows[0]["created_time"] = "2026-07-04T06:24:13-05:00"
+        self.rows = rows
+        sync_leads()
+
+        with unittest.mock.patch.dict(
+            "os.environ", {"LEAD_SYNC_CONTACT_CUTOFF": "2026-08-15T00:00:00+00:00"}
+        ):
+            result = sync_leads(dry_run=True)
+        self.assertEqual(1, result.rebaselined)
+        self.assertEqual("CREATED", get_lead(self.phones[0])["status"])  # unchanged
+
     def test_a_row_with_no_date_is_treated_as_pre_cutoff(self):
         from services.lead_sync import BASELINE_STATUS
 
