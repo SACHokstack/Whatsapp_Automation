@@ -62,9 +62,21 @@ def get_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
+def _open_workbook(client, name: str):
+    """Open the leads workbook. Prefer GOOGLE_SHEET_URL (or GOOGLE_SHEET_KEY) — robust, no exact
+    name match or risk of duplicate-named files; fall back to opening by name."""
+    url = os.getenv("GOOGLE_SHEET_URL", "").strip()
+    if url:
+        return client.open_by_url(url)
+    key = os.getenv("GOOGLE_SHEET_KEY", "").strip()
+    if key:
+        return client.open_by_key(key)
+    return client.open(name)
+
+
 @lru_cache(maxsize=1)
 def get_sheet():
-    return get_client().open(_sheet_name()).worksheet(_worksheet_name())
+    return _open_workbook(get_client(), _sheet_name()).worksheet(_worksheet_name())
 
 
 def get_rows() -> list[dict[str, str]]:
@@ -181,7 +193,7 @@ def print_rows() -> None:
 def get_worksheet(worksheet_name: str, workbook_name: str | None = None):
     """Open a named tab from the Timmins Leads workbook (or any named workbook)."""
     wb = workbook_name or LEADS_WORKBOOK
-    return get_client().open(wb).worksheet(worksheet_name)
+    return _open_workbook(get_client(), wb).worksheet(worksheet_name)
 
 
 def get_rows_from(worksheet_name: str, workbook_name: str | None = None) -> list[dict]:
@@ -263,7 +275,7 @@ def find_phone_in_workbook(phone: str) -> tuple[str, str] | None:
     client = get_client()
     for wb_name in workbooks_to_search:
         try:
-            workbook = client.open(wb_name)
+            workbook = _open_workbook(client, wb_name)
             for ws in workbook.worksheets():
                 if ws.title == HOT_LEADS_TAB:
                     continue
