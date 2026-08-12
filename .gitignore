@@ -31,3 +31,9 @@ images/
 
 # Superseded asset from the removed flyer feature (gitignore matches spaces literally, no quotes)
 Timmins Training Consulting Sdn Bhd - Training Calendar - July August 2026.pdf
+
+# RAG source content — now served from Railway Postgres (index lives in rag_chunks).
+# Kept in local-data/rag-sources/ for rebuilds; out of the repo per the no-data-in-git goal.
+NEW_Courses/
+KB_extracted/
+TIMMINS TRAINING - Meta Lead sautomation.docx
