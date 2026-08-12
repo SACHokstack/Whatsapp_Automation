@@ -34,6 +34,19 @@ _TOP_K = int(os.getenv("RAG_V2_TOP_K", "5"))
 _MIN_SCORE = float(os.getenv("RAG_V2_MIN_SCORE", "0.42"))
 
 
+def _use_postgres() -> bool:
+    """Store the vector index in Postgres (RAG_STORE=postgres + DATABASE_URL) instead of the
+    on-disk SQLite file. Default off, so nothing changes until this is explicitly enabled."""
+    return os.getenv("RAG_STORE", "").strip().lower() in {"postgres", "postgresql", "pg"} and bool(
+        os.getenv("DATABASE_URL", "").strip()
+    )
+
+
+def _force_rebuild() -> bool:
+    """Re-embed from the content files even if the DB is populated (for content updates)."""
+    return os.getenv("RAG_FORCE_REBUILD", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 class _NoApiKeyGenerator:
     def __init__(self, provider: str) -> None:
         self.provider = provider
@@ -258,11 +271,25 @@ class RagV2Runtime:
             if self._service is not None and self._version == version:
                 return self._service
             embedder = configured_embedder()
-            store = SQLiteVectorStore(self.index_path)
-            documents = _documents()
-            chunk_count = build_index(documents, embedder=embedder, store=store)
-            health = store.health()
+            store = self._make_store()
             generator = _configured_generator(generation_provider, api_key, generation_model)
+
+            # Code-only path: when the Postgres store is already populated and compatible,
+            # read the pre-built index straight from it — no content files, no re-embedding.
+            # (SQLite always rebuilds from files, so local dev and the current live app are
+            # unchanged until RAG_STORE=postgres is set.)
+            if _use_postgres() and not _force_rebuild() and self._store_ready(store, embedder):
+                health = store.health()
+                chunk_count = int(health.get("actual_chunk_count") or 0)
+                event = "rag_v2_index_reused"
+                doc_count = int(health.get("document_count") or 0)
+            else:
+                documents = _documents()
+                chunk_count = build_index(documents, embedder=embedder, store=store)
+                health = store.health()
+                event = "rag_v2_index_built"
+                doc_count = len(documents)
+
             self._service = RagService(
                 HybridRetriever(store, embedder, RetrievalConfig(min_score=_MIN_SCORE)),
                 generator,
@@ -271,8 +298,9 @@ class RagV2Runtime:
             self._generation_provider = generation_provider
             self._generation_model = generation_model
             logger.info(
-                "event=rag_v2_index_built documents=%d chunks=%d embedder=%s dimension=%s corpus_version=%s backend=%s generation_provider=%s generation_model=%s",
-                len(documents),
+                "event=%s documents=%d chunks=%d embedder=%s dimension=%s corpus_version=%s backend=%s generation_provider=%s generation_model=%s",
+                event,
+                doc_count,
                 chunk_count,
                 embedder.model_id,
                 embedder.dimension,
@@ -282,6 +310,23 @@ class RagV2Runtime:
                 generation_model,
             )
             return self._service
+
+    def _make_store(self):
+        """Postgres store when RAG_STORE=postgres (+ DATABASE_URL); SQLite otherwise."""
+        if _use_postgres():
+            from rag_v2.pg_store import PostgresVectorStore
+
+            return PostgresVectorStore()
+        return SQLiteVectorStore(self.index_path)
+
+    @staticmethod
+    def _store_ready(store, embedder) -> bool:
+        """True if the store already holds a compatible, non-empty index."""
+        try:
+            store.assert_compatible(model_id=embedder.model_id, dimension=embedder.dimension)
+            return store.count() > 0
+        except Exception:  # noqa: BLE001 — not built / incompatible / unreachable -> rebuild
+            return False
 
     def warmup(self) -> None:
         self._ensure_current()
