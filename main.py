@@ -1755,6 +1755,27 @@ def _course_from_selection(message: str):
     return detect_explicit_course(message) or detect_course(message)
 
 
+def _plan_is_new_question(plan, message: str) -> bool:
+    """Is this a fresh ask rather than an attempt to pick a course from the picker?
+
+    Mirrors how the qualification machine defers to the plan before consuming a message
+    as a slot answer: understanding is authoritative, so a state never eats a real question.
+    """
+    if plan is not None:
+        substantive = [
+            request.intent
+            for request in plan.requests
+            if request.intent not in {"GREETING", "SMALLTALK", "UNKNOWN", "COURSE_CONFIRMATION"}
+        ]
+        if plan.control in {"human", "stop"}:
+            return True
+        return bool(substantive)
+    # No interpreter: treat anything question-shaped as a new ask, but leave a bare word or
+    # two ("softwre testng", "the linux one") as a mis-typed selection worth re-asking.
+    text = (message or "").strip()
+    return bool(text) and ("?" in text or len(text.split()) > 3)
+
+
 def _course_select_pending(state: str) -> str | None:
     """The intent we were about to answer, parked in the state string as
     "ASKING_COURSE_SELECT:FEES" so it needs no extra database column."""
@@ -2175,6 +2196,33 @@ def _process_conversation(
     if pending_course_intent is not None:
         chosen = _course_from_selection(message)
         if chosen is None:
+            # The picker must not hold the conversation hostage. A customer who asks about
+            # fees, sees the list, then pivots to "how do we pay?" is asking something new —
+            # and PAYMENT/CANCELLATION are global anyway, so re-showing the course list both
+            # fails to answer them and traps them until they name a course they never wanted
+            # to name. Only re-ask when the message really was a failed pick.
+            if _plan_is_new_question(plan, message):
+                # If the new ask still needs a course, re-offer the picker for THAT intent
+                # rather than the stale one; otherwise let it route and be answered globally.
+                new_scoped = next(
+                    (
+                        r.intent
+                        for r in (plan.requests if plan is not None else ())
+                        if r.intent in _COURSE_SCOPED_INTENTS and r.course_slug is None
+                    ),
+                    None,
+                )
+                if new_scoped and new_scoped != pending_course_intent:
+                    return (
+                        _course_picker(new_scoped),
+                        {
+                            "conversation_state": f"{_COURSE_SELECT_STATE}:{new_scoped}",
+                            "qualification_step": f"{_COURSE_SELECT_STATE}:{new_scoped}",
+                        },
+                    )
+                if new_scoped:
+                    return _course_picker(new_scoped), None
+                return None, {"conversation_state": "", "qualification_step": ""}
             return (
                 "Sorry, I didn't catch which course that was.\n\n"
                 + _course_picker(pending_course_intent),

@@ -94,3 +94,51 @@ class QualificationToleratesOutOfOrderAnswers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PickerIsInterruptible(unittest.TestCase):
+    """The picker must not hold the conversation hostage.
+
+    Asking about fees, seeing the list, then pivoting to "how do we pay?" used to return
+    "Sorry, I didn't catch which course that was" and re-show the fee picker on every
+    later turn — with no escape except naming a course the customer never wanted to name.
+    """
+
+    def _pending(self, intent="FEES"):
+        return {"status": "CONTACTED", "conversation_state": f"ASKING_COURSE_SELECT:{intent}"}
+
+    def test_pivot_to_a_global_intent_is_answered_not_re_prompted(self):
+        reply, updates = main._process_conversation(
+            "how do we pay?", self._pending(), plan=_plan("PAYMENT")
+        )
+        self.assertIsNone(reply)  # routed onward and answered globally
+        self.assertEqual("", updates["conversation_state"])  # trap released
+
+    def test_pivot_to_cancellation_is_also_released(self):
+        reply, updates = main._process_conversation(
+            "can we cancel and refund?", self._pending(), plan=_plan("CANCELLATION")
+        )
+        self.assertIsNone(reply)
+        self.assertEqual("", updates["conversation_state"])
+
+    def test_pivot_to_a_different_scoped_question_repoints_the_picker(self):
+        reply, updates = main._process_conversation(
+            "when does it start?", self._pending("FEES"), plan=_plan("SCHEDULE")
+        )
+        self.assertIn("which course", reply.lower())
+        # the picker now tracks the NEW question, not the stale one
+        self.assertEqual("ASKING_COURSE_SELECT:SCHEDULE", updates["conversation_state"])
+
+    def test_a_mistyped_course_name_still_gets_re_asked(self):
+        reply, updates = main._process_conversation(
+            "the blue one", self._pending(), plan=None
+        )
+        self.assertIn("didn't catch", reply)
+        self.assertIsNone(updates)
+
+    def test_a_valid_selection_is_unaffected(self):
+        reply, updates = main._process_conversation(
+            "software testing", self._pending(), plan=None
+        )
+        self.assertEqual("sw-testing-aug-2026", updates["course"])
+        self.assertIn("RM", reply)
