@@ -16,6 +16,7 @@ if backend_name() == "postgresql":
         get_lead,
         get_messages,
         init_db,
+        list_leads,
         upsert_lead,
     )
 else:
@@ -26,5 +27,6 @@ else:
         get_lead,
         get_messages,
         init_db,
+        list_leads,
         upsert_lead,
     )

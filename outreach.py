@@ -1,76 +1,69 @@
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from services.auto_outreach import dispatch_outreach
 from services.course_loader import get_course, load_courses
-from services.google_sheets import get_rows_from, update_lead_in
-from services.persistence import add_message, upsert_lead
+from services.lead_sync import cell as _clean
+from services.lead_sync import detect_course_from_ad, normalize_phone
+from services.persistence import add_message, backend_name, upsert_lead
 from services.whatsapp import send_template
 
 
-def normalize_phone(raw) -> str | None:
-    # Handles +60..., 60..., Excel float like 919444209374.0
-    s = re.sub(r"[^\d]", "", str(raw).split(".")[0])
-    return s if len(s) >= 10 else None
-
-
-def _clean(row: dict, *keys: str) -> str:
-    """Try each key in order, return first non-empty value. Handles 'who_will_pay?' variant."""
-    for key in keys:
-        val = str(row.get(key) or "").strip()
-        if val:
-            return val
-    return ""
-
-
 def _detect_course_slug_from_row(row: dict, courses: dict) -> str | None:
-    """Detect course slug from ad_name, adset_name, or campaign_name column."""
-    ad_name = str(
-        row.get("ad_name", "") or row.get("adset_name", "") or row.get("campaign_name", "") or ""
-    ).lower()
-    if not ad_name:
-        return None
-    for slug, course in courses.items():
-        for kw in course.keywords or []:
-            if kw.lower() in ad_name:
-                return slug
-    # Fallback abbreviations used in Meta ad names
-    if "yoct" in ad_name or "y0ct" in ad_name:
-        for slug in courses:
-            if "yocto" in slug:
-                return slug
-    if "elsi" in ad_name:
-        for slug in courses:
-            if "internals" in slug:
-                return slug
-    if "eldb" in ad_name or "debug" in ad_name:
-        for slug in courses:
-            if "debug" in slug:
-                return slug
-    if "kernel" in ad_name:
-        for slug in courses:
-            if "kernel" in slug:
-                return slug
-    if "python" in ad_name:
-        for slug in courses:
-            if "python" in slug:
-                return slug
-    if "testing" in ad_name or "playwright" in ad_name:
-        for slug in courses:
-            if "sw-testing" in slug:
-                return slug
-    return None
+    """Detect course slug from the ad_name, adset_name, or campaign_name column."""
+    ad_name = _clean(row, "ad_name", "adset_name", "campaign_name")
+    return detect_course_from_ad(ad_name, courses)
+
+
+def _candidates_from_sheet(course, args, worksheet: str, workbook: str | None) -> list[dict]:
+    from services.google_sheets import get_rows_from
+
+    rows = get_rows_from(worksheet, workbook)
+
+    # In mixed-sheet mode, filter rows to this course based on ad_name detection
+    if args.worksheet or args.workbook:
+        all_courses = load_courses()
+        original_count = len(rows)
+        rows = [r for r in rows if _detect_course_slug_from_row(r, all_courses) == args.course]
+        print(f"Rows in sheet : {original_count}")
+        print(f"Matching course: {len(rows)}\n")
+
+    # Pick up CREATED leads (or rows with no status yet)
+    rows = [r for r in rows if str(r.get(course.status_col, "")).strip().upper() in ("CREATED", "")]
+    if args.limit:
+        rows = rows[: args.limit]
+
+    return [
+        {
+            # Support both 'phone' and 'whatsapp_number' column names
+            "phone": normalize_phone(row.get(course.phone_col) or row.get("whatsapp_number", "")),
+            "name": _clean(row, course.name_col, "full_name", "name") or "there",
+            "job_title": _clean(row, "job_title"),
+            "company_name": _clean(row, "company_name"),
+            # Handle the 'who_will_pay?' column name variant
+            "who_will_pay": _clean(row, "who_will_pay", "who_will_pay?"),
+            "email": _clean(row, "email"),
+            "raw_phone": row.get(course.phone_col) or row.get("whatsapp_number", ""),
+        }
+        for row in rows
+    ]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bulk WhatsApp outreach for a course")
     parser.add_argument("--course", required=True, help="Course slug (e.g. sw-testing-july-2026)")
+    parser.add_argument(
+        "--source",
+        choices=("db", "sheet"),
+        default="db",
+        help="Read leads from the leads database (default) or the Google Sheet",
+    )
     parser.add_argument(
         "--worksheet",
         default=None,
@@ -101,49 +94,48 @@ def main() -> None:
     mixed_mode = bool(args.worksheet or args.workbook)
 
     print(f"Course   : {course.name}")
-    print(f"Workbook : {workbook or '(default Timmins Leads)'}")
-    print(f"Tab      : {worksheet}{' [mixed — filtering by course]' if mixed_mode else ''}")
+    if args.source == "db":
+        print(f"Source   : leads database ({backend_name()})")
+    else:
+        print(f"Workbook : {workbook or '(default Timmins Leads)'}")
+        print(f"Tab      : {worksheet}{' [mixed — filtering by course]' if mixed_mode else ''}")
     print(f"Template : {course.outreach_template} ({course.outreach_language})")
     print(f"Mode     : {'DRY RUN' if args.dry_run else 'LIVE'}\n")
 
-    rows = get_rows_from(worksheet, workbook)
+    if args.source == "db":
+        # Same dispatcher the scheduler uses — force=True because a human asked for it,
+        # so it ignores AUTO_OUTREACH_ENABLED and the send window.
+        result = dispatch_outreach(
+            course_slug=course.slug,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            force=True,
+            on_event=lambda kind, message: print(f"  {kind.upper():10} {message}"),
+        )
+        print(
+            f"\nDone.  Sent: {result.sent} | Skipped: {result.skipped} | "
+            f"Failed: {result.failed} | Still pending: {result.pending}"
+        )
+        return
 
-    # In mixed-sheet mode, filter rows to this course based on ad_name detection
-    if mixed_mode:
-        all_courses = load_courses()
-        original_count = len(rows)
-        rows = [r for r in rows if _detect_course_slug_from_row(r, all_courses) == args.course]
-        print(f"Rows in sheet : {original_count}")
-        print(f"Matching course: {len(rows)}\n")
-
-    # Pick up CREATED leads (or rows with no status yet)
-    candidates = [
-        r for r in rows if str(r.get(course.status_col, "")).strip().upper() in ("CREATED", "")
-    ]
-
-    if args.limit:
-        candidates = candidates[: args.limit]
+    candidates = _candidates_from_sheet(course, args, worksheet, workbook)
 
     print(f"Found {len(candidates)} CREATED lead(s) to process.\n")
 
     sent = skipped = failed = 0
 
     for row in candidates:
-        # Support both 'phone' and 'whatsapp_number' column names
-        raw_phone = row.get(course.phone_col) or row.get("whatsapp_number", "")
-        phone = normalize_phone(raw_phone)
-        name = _clean(row, course.name_col, "full_name", "name") or "there"
+        phone = row["phone"]
+        name = row["name"]
+        job_title = row["job_title"]
+        company_name = row["company_name"]
+        who_will_pay = row["who_will_pay"]
+        email = row["email"]
 
         if phone is None:
-            print(f"  SKIP   invalid phone: {raw_phone!r}")
+            print(f"  SKIP   invalid phone: {row['raw_phone']!r}")
             skipped += 1
             continue
-
-        # Extract Meta Lead Ads fields — handle 'who_will_pay?' column name variant
-        job_title = _clean(row, "job_title")
-        company_name = _clean(row, "company_name")
-        who_will_pay = _clean(row, "who_will_pay", "who_will_pay?")
-        email = _clean(row, "email")
 
         if args.dry_run:
             print(f"  [DRY RUN] would send to {phone} ({name})")
@@ -162,10 +154,13 @@ def main() -> None:
         )
 
         if response.ok:
-            # Mark CONTACTED in the same sheet/tab we read from
-            update_lead_in(phone, worksheet, workbook, **{course.status_col: "CONTACTED"})
+            if args.source == "sheet":
+                # Mark CONTACTED in the same sheet/tab we read from
+                from services.google_sheets import update_lead_in
 
-            # Upsert ALL Meta fields into SQLite so the bot has them when the lead replies
+                update_lead_in(phone, worksheet, workbook, **{course.status_col: "CONTACTED"})
+
+            # Upsert ALL Meta fields into the leads db so the bot has them when the lead replies
             upsert_lead(
                 phone,
                 status="CONTACTED",

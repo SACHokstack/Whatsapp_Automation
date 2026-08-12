@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -20,6 +21,8 @@ from rag_v2.runtime import answer as rag_answer
 from rag_v2.runtime import health as rag_health
 from rag_v2.runtime import warmup as warmup_rag
 from services.ai_reply import _deterministic_reply
+from services.auto_outreach import dispatch_outreach
+from services.auto_outreach import enabled as auto_outreach_enabled
 from services.conversation_controller import decide_reply
 from services.course_loader import (
     detect_course,
@@ -44,6 +47,7 @@ from services.google_sheets import (
 )
 from services.interpret import CATALOG_INTENTS, understand
 from services.knowledge_base import topic_for_message
+from services.lead_sync import sync_leads
 from services.logging_config import configure_logging, subject_id
 from services.persistence import (
     add_message,
@@ -877,6 +881,8 @@ init_queue()
 _queue_wakeup = threading.Event()
 _queue_shutdown = threading.Event()
 _queue_worker: threading.Thread | None = None
+_lead_sync_shutdown = threading.Event()
+_lead_sync_worker: threading.Thread | None = None
 
 
 _AUTO_REPLY_SIGNALS = (
@@ -2349,6 +2355,10 @@ def readiness():
         "leads": summary["total_leads"],
         "queue": events,
         "safe_mode": os.getenv("BOT_SAFE_MODE", "true").lower() in {"1", "true", "yes", "on"},
+        "lead_pipeline": {
+            "sync_interval_minutes": _lead_sync_interval_seconds() // 60,
+            "auto_outreach": auto_outreach_enabled(),
+        },
     }
 
 
@@ -2360,6 +2370,27 @@ def rag_v2_health():
 @app.get("/stats")
 def stats():
     return get_dashboard_summary()
+
+
+@app.post("/admin/sync-leads")
+def sync_leads_now(request: Request):
+    """Run the lead pipeline now — pull new leads in, then send first contact.
+
+    The scheduler does this on its own; this endpoint is for a cron or a human who
+    doesn't want to wait for the next tick. Guarded by LEAD_SYNC_TOKEN, since it both
+    writes to the leads table and sends messages.
+    """
+    expected = os.getenv("LEAD_SYNC_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="LEAD_SYNC_TOKEN is not configured")
+    supplied = request.headers.get("x-sync-token", "").strip()
+    if not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Invalid sync token")
+    try:
+        return _run_lead_pipeline()
+    except Exception as error:
+        logger.exception("event=lead_pipeline_failed trigger=manual")
+        raise HTTPException(status_code=502, detail="Lead pipeline failed") from error
 
 
 @app.get("/conversation/{phone}")
@@ -2959,9 +2990,47 @@ def _event_worker_loop() -> None:
             _queue_wakeup.clear()
 
 
+# --- Lead sync: pick up new rows in the leads source without a manual import ---
+
+
+def _lead_sync_interval_seconds() -> int:
+    """Minutes between automatic lead syncs. 0 (the default) disables the poller."""
+    try:
+        minutes = int(os.getenv("LEAD_SYNC_INTERVAL_MINUTES", "0").strip() or 0)
+    except ValueError:
+        return 0
+    return max(0, minutes) * 60
+
+
+def _run_lead_sync() -> dict:
+    """One pass over the leads source. Idempotent — only phones new to the DB are written."""
+    excel = os.getenv("LEAD_SYNC_EXCEL_PATH", "").strip() or None
+    return sync_leads(excel_path=excel).as_dict()
+
+
+def _run_lead_pipeline() -> dict:
+    """New leads in → first contact out. The webhook handles everything after they reply."""
+    sync = _run_lead_sync()
+    outreach = dispatch_outreach().as_dict()
+    return {"sync": sync, "outreach": outreach}
+
+
+def _lead_sync_loop() -> None:
+    interval = _lead_sync_interval_seconds()
+    # Let boot settle (RAG warmup, first webhooks) before the first sheet read
+    if _lead_sync_shutdown.wait(min(60, interval)):
+        return
+    while not _lead_sync_shutdown.is_set():
+        try:
+            _run_lead_pipeline()
+        except Exception:
+            logger.exception("event=lead_pipeline_failed")
+        _lead_sync_shutdown.wait(interval)
+
+
 @app.on_event("startup")
 def _start_event_worker() -> None:
-    global _queue_worker
+    global _queue_worker, _lead_sync_worker
     if _queue_worker and _queue_worker.is_alive():
         return
     _queue_shutdown.clear()
@@ -2971,6 +3040,13 @@ def _start_event_worker() -> None:
     # Build & vectorise the knowledge index off the request path so the first
     # customer reply isn't blocked on embedding-model load + encoding.
     threading.Thread(target=_warmup_rag, daemon=True).start()
+
+    interval = _lead_sync_interval_seconds()
+    if interval and not (_lead_sync_worker and _lead_sync_worker.is_alive()):
+        _lead_sync_shutdown.clear()
+        _lead_sync_worker = threading.Thread(target=_lead_sync_loop, daemon=True)
+        _lead_sync_worker.start()
+        logger.info("event=lead_sync_scheduled interval_seconds=%d", interval)
 
 
 def _warmup_rag() -> None:
@@ -2985,8 +3061,11 @@ def _warmup_rag() -> None:
 def _stop_event_worker() -> None:
     _queue_shutdown.set()
     _queue_wakeup.set()
+    _lead_sync_shutdown.set()
     if _queue_worker:
         _queue_worker.join(timeout=5)
+    if _lead_sync_worker:
+        _lead_sync_worker.join(timeout=5)
 
 
 @app.post("/webhook/whatsapp")

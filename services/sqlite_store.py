@@ -247,6 +247,42 @@ def get_lead(phone: str) -> dict[str, str] | None:
     return {key: ("" if value is None else str(value)) for key, value in dict(row).items()}
 
 
+def list_leads(
+    *,
+    course: str | None = None,
+    statuses: tuple[str, ...] | None = None,
+    limit: int | None = None,
+) -> list[dict[str, str]]:
+    """Leads filtered by course and status. A blank/NULL status matches when '' is in statuses."""
+    init_db()
+    clauses: list[str] = []
+    params: list[object] = []
+    if course:
+        clauses.append("course = ?")
+        params.append(course)
+    if statuses is not None:
+        wanted = tuple(s.upper() for s in statuses)
+        placeholders = ", ".join(["?"] * len(wanted))
+        clause = f"UPPER(COALESCE(status, '')) IN ({placeholders})"
+        params.extend(wanted)
+        clauses.append(clause)
+
+    query = "SELECT * FROM leads"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY updated_at ASC"
+    if limit is not None and limit > 0:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    with get_connection() as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+    return [
+        {key: ("" if value is None else str(value)) for key, value in dict(row).items()}
+        for row in rows
+    ]
+
+
 def add_message(
     phone: str,
     *,

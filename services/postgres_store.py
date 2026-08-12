@@ -136,6 +136,39 @@ def get_lead(phone: str) -> dict[str, str] | None:
     return {key: "" if value is None else str(value) for key, value in row.items()}
 
 
+def list_leads(
+    *,
+    course: str | None = None,
+    statuses: tuple[str, ...] | None = None,
+    limit: int | None = None,
+) -> list[dict[str, str]]:
+    """Leads filtered by course and status. A blank/NULL status matches when '' is in statuses."""
+    init_db()
+    clauses: list[str] = []
+    params: list[object] = []
+    if course:
+        clauses.append("course = %s")
+        params.append(course)
+    if statuses is not None:
+        clauses.append("UPPER(COALESCE(status, '')) = ANY(%s)")
+        params.append([s.upper() for s in statuses])
+
+    query = "SELECT * FROM leads"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY updated_at ASC"
+    if limit is not None and limit > 0:
+        query += " LIMIT %s"
+        params.append(limit)
+
+    with get_connection() as connection, connection.cursor() as cursor:
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+    return [
+        {key: "" if value is None else str(value) for key, value in row.items()} for row in rows
+    ]
+
+
 def add_message(phone: str, *, direction: str, body: str, message_id: str | None = None) -> bool:
     phone, body = str(phone).strip(), str(body).strip()
     if not phone or not body:
