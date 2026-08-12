@@ -495,14 +495,37 @@ def deterministic_plan(
         is_day_breakdown
         or day is not None
         or re.search(
-            r"\b(?:syllabus|curriculum|outline|topics?|modules?|sessions?|covered|cover|learn|"
+            r"\b(?:syllabus|curriculum|outline|topics?|modules?|sessions?|covered|cover|"
             r"content|agenda|breakdown|course structure)\b",
+            normalized,
+        )
+        # "learn" only counts when it is about THIS course. A bare "learn" made
+        # "i want to learn mobile app development" return the current course's syllabus
+        # instead of admitting we don't teach it.
+        or re.search(
+            r"\bwhat\s+(?:will|do|would|can)\s+(?:i|we)\s+learn\b|"
+            r"\blearn\b.{0,25}\b(?:in|from|on)\s+(?:this|the)\s+"
+            r"(?:course|training|programme|program|class)\b",
             normalized,
         )
         or re.search(r"\btell me about\b", normalized)
     )
     _cn = r"(?:courses?|trainings?|programmes?|programs?|classes?)"
-    catalog = bool(
+    # A question about a specific fact is not a request for the catalogue, even when it says
+    # "course": "what is the fee for the yocto course" matched the category+"course" pattern
+    # below and was answered with the whole course list instead of the Yocto fee.
+    specific_fact = bool(
+        re.search(
+            r"\b(?:fees?|price[sd]?|pricing|cost[s]?|how much|rm\d|"
+            r"when|dates?|schedule|timing|venue|where|located|location|"
+            r"how long|how many days|duration|trainer|instructor|"
+            r"hrdc|claimable|certificate|certification)\b",
+            normalized,
+        )
+    )
+    # Phrasings that explicitly ask what is on offer. These stay catalogue questions even when
+    # they also mention a fact ("what other courses are available and how much do they cost").
+    catalog_explicit = bool(
         re.search(
             rf"\b(?:any|which|what)\s+(?:other\s+)?{_cn}\b|"
             rf"\b(?:any|other|available|all)\s+(?:\w+\s+){{0,3}}{_cn}\b|"
@@ -510,12 +533,21 @@ def deterministic_plan(
             rf"\b(?:tell me|know more|learn more|more info|more information|show me|list|"
             rf"give me|details|interested|looking for)\b.{{0,60}}\b{_cn}\b|"
             rf"\bwhat\s+(?:do you |can you )?(?:have|offer|provide)\b|"
-            rf"\bdo you (?:have|offer|provide|teach|run|conduct)\b.{{0,30}}\b{_cn}\b|"
+            rf"\bdo you (?:have|offer|provide|teach|run|conduct)\b.{{0,30}}\b{_cn}\b",
+            normalized,
+        )
+    )
+    # A bare "<category> course" phrase, e.g. "embedded linux courses". This one also matches a
+    # course NAMED inside a fact question ("the yocto course"), so it must not claim the turn
+    # when a specific fact is being asked — that is FEES/SCHEDULE/... about that course.
+    catalog_category = bool(
+        re.search(
             rf"\b(?:embedded linux|embedded|software testing|python|linux kernel|yocto|kernel)"
             rf"\s+{_cn}\b",
             normalized,
         )
     )
+    catalog = catalog_explicit or (catalog_category and not specific_fact)
     trainer_question = bool(
         re.search(
             r"\b(?:trainer|trainers|instructor|facilitator)\b|\bwho (?:teaches|is teaching)\b",
@@ -571,7 +603,21 @@ def deterministic_plan(
         ),
         ("ONLINE", r"\b(?:online|remote|virtual)\b", "online availability"),
     )
+    # Facilities at the venue (parking, wifi, meals, prayer room...) are not the venue fact.
+    # Answering "is there parking at the venue" with the address is wrong — these have to go
+    # to the knowledge base, and be escalated to the consultant when unconfirmed.
+    facility_question = bool(
+        re.search(
+            r"\b(?:parking|park|wifi|wi-fi|internet|surau|prayer room|"
+            r"food|meals?|lunch|snacks?|refreshments?|drinks?|halal|"
+            r"accommodation|hotel room|stay|transport|shuttle|"
+            r"wheelchair|accessib\w*|dress code)\b",
+            normalized,
+        )
+    )
     for intent, pattern, query in exact_patterns:
+        if intent == "VENUE" and facility_question:
+            continue
         if trainer_catalog and intent in {"FEES", "SCHEDULE", "VENUE", "HRDC", "TRAINER"}:
             continue
         if catalog and intent in {"FEES", "SCHEDULE", "VENUE", "HRDC", "TRAINER"}:
@@ -687,6 +733,16 @@ _SYSTEM_PROMPT = (
     "- Discounts, group rates, a team of N, or special pricing -> DISCOUNT, mode exact, never "
     "control human. Participant replacement -> PARTICIPANT_REPLACEMENT, not VENUE or BATCH_SIZE. "
     "HRDC grant document/paperwork questions -> HRDC_DOCUMENTS, mode exact.\n"
+    "- VENUE is ONLY the venue's name/address ('where is it held', 'which hotel', 'is it in Penang'). "
+    "Questions about FACILITIES or amenities at or around the venue — parking, wifi, prayer room, "
+    "meals/snacks/refreshments, halal food, accessibility, accommodation, transport, dress code — are "
+    "NOT VENUE: use OPERATIONS, mode retrieve. Answering these with the venue address is wrong; they "
+    "must be grounded in the knowledge base or escalated to the consultant.\n"
+    "- CATALOG is ONLY for asking which courses exist, with NO specific course named ('what courses "
+    "are there', 'list your trainings'). If the message names a course or refers to the current one "
+    "and asks a fact about it, use that fact's intent with that course_slug: 'what is the fee for the "
+    "yocto course' -> {FEES, exact, yocto slug}, NOT CATALOG. The word 'course' alone never means "
+    "CATALOG.\n"
     "- Buyer questions about value, worth, price justification, or YouTube/self-study -> "
     "COURSE_VALUE, mode exact. Questions comparing the current course to another named course -> "
     "COURSE_COMPARISON, mode exact; the named course is the comparison target, not a course switch.\n"
