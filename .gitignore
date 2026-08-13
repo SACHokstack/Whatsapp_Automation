@@ -37,3 +37,7 @@ Timmins Training Consulting Sdn Bhd - Training Calendar - July August 2026.pdf
 NEW_Courses/
 KB_extracted/
 TIMMINS TRAINING - Meta Lead sautomation.docx
+
+# Editor settings are personal, not project config
+.vscode/
+.idea/
