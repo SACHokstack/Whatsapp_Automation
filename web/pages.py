@@ -913,9 +913,9 @@ _ADMIN_COURSES_BODY = """<h1>Courses</h1>
 <div class="db" id="dBody"></div></div>"""
 
 _ADMIN_COURSES_SCRIPT = """
-let CUR=null, POLL=null, EDITABLE=true;
+let CUR=null, POLL=null, EDITABLE=true, PENDING_FILE=null;
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');
- if(POLL){clearInterval(POLL);POLL=null;} CUR=null;}
+ if(POLL){clearInterval(POLL);POLL=null;} CUR=null; PENDING_FILE=null;}
 
 async function loadList(){
  const d=await api('/admin/api/courses');
@@ -939,6 +939,11 @@ async function openCourse(slug){
  document.getElementById('dName').textContent=slug?CUR.name:'New course';
  const dis=EDITABLE?'':'disabled';
  document.getElementById('dBody').innerHTML=`
+  ${slug?'':`<div class="note">Have the brochure? Upload it and the fields below are filled in
+   for you — <b>check them before saving</b>, especially the fees. Scanned files are read with OCR.
+   <div class="btns"><input type="file" id="src" ${dis}>
+   <button class="btn" id="read" ${dis}>Read document</button></div>
+   <div id="readmsg" class="muted" style="margin-top:.5rem"></div></div>`}
   <label class="f">Course name<input id="f_name" value="${esc(CUR.name)}" ${dis}></label>
   <label class="f">Dates<input id="f_dates" value="${esc(CUR.dates||'')}" ${dis}></label>
   <label class="f">Venue<input id="f_venue" value="${esc(CUR.venue||'')}" ${dis}></label>
@@ -962,6 +967,7 @@ async function openCourse(slug){
 
  const save=document.getElementById('save');
  if(save)save.onclick=saveCourse;
+ const read=document.getElementById('read'); if(read)read.onclick=readDocument;
  const t=document.getElementById('toggle'); if(t)t.onclick=toggleActive;
  const d=document.getElementById('del'); if(d)d.onclick=deleteCourse;
  const u=document.getElementById('up'); if(u)u.onclick=upload;
@@ -979,10 +985,47 @@ function formValues(){
   keywords:document.getElementById('f_kw').value,
   overview:document.getElementById('f_ov').value};
 }
+// Fills the form from a brochure. Nothing is saved here — the admin reviews first, and the
+// same file is attached to the course after Save so it also becomes searchable.
+async function readDocument(){
+ const input=document.getElementById('src');
+ if(!input.files.length){toast('Choose the brochure first.',true);return;}
+ const btn=document.getElementById('read'), msg=document.getElementById('readmsg');
+ btn.disabled=true;btn.textContent='Reading…';
+ msg.textContent='Extracting text and reading the details. Scanned files take longer.';
+ const fd=new FormData();fd.append('file',input.files[0]);
+ try{
+  const r=await send('/admin/api/courses/extract','POST',fd,true);
+  const f=r.fields||{};
+  const set=(id,v)=>{const el=document.getElementById(id);if(el&&v)el.value=v;};
+  set('f_name',f.name);set('f_dates',f.dates);set('f_venue',f.venue);
+  set('f_hrdc',f.hrdc_deadline);set('f_pay',f.payment_deadline);
+  set('f_kw',(f.keywords||[]).join(', '));
+  if(f.fees&&Object.keys(f.fees).length)set('f_fees',JSON.stringify(f.fees));
+  set('f_ov',f.overview);
+  PENDING_FILE=input.files[0];
+  const missing=['name','dates','venue'].filter(k=>!f[k]);
+  msg.innerHTML=`Read ${r.characters} characters (${esc(r.extraction_method)}). `+
+   (missing.length?`Could not find: <b>${esc(missing.join(', '))}</b> — please fill those in. `:'')+
+   `<b>Check the fees and dates against the document before saving.</b>`;
+ }catch(e){msg.textContent='';toast(e.message,true);}
+ finally{btn.disabled=false;btn.textContent='Read document';}
+}
+
 async function saveCourse(){
- try{const r=await send('/admin/api/courses','POST',formValues());
-  toast(r.created?'Course created.':'Course saved.');closeDrawer();await loadList();}
- catch(e){toast(e.message,true);}
+ try{
+  const r=await send('/admin/api/courses','POST',formValues());
+  toast(r.created?'Course created.':'Course saved.');
+  // Attach the brochure the fields came from, so the bot can answer from its full text too.
+  if(PENDING_FILE&&r.slug){
+   const fd=new FormData();fd.append('file',PENDING_FILE);
+   try{
+    await send('/admin/api/courses/'+r.slug+'/documents','POST',fd,true);
+    toast('Course created. Reading the document into the bot now…');
+   }catch(e){toast('Course saved, but attaching the document failed: '+e.message,true);}
+  }
+  PENDING_FILE=null;closeDrawer();await loadList();
+ }catch(e){toast(e.message,true);}
 }
 async function toggleActive(){
  try{const r=await send('/admin/api/courses/'+CUR.slug+'/active','POST',{active:!CUR.active});

@@ -2199,6 +2199,50 @@ async def admin_api_course_save(request: Request):
     return {"slug": slug, "created": not existing}
 
 
+@app.post("/admin/api/courses/extract")
+async def admin_api_course_extract(request: Request, file: UploadFile = File(...)):
+    """Read a brochure and return proposed course fields for the admin to review.
+
+    Deliberately saves nothing. The values land in the editor so a human confirms them before
+    the bot starts quoting them — an extracted fee is a claim about money, not a formatting
+    detail. If no model is configured, this fails with a message pointing at manual entry.
+    """
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.course_extract import ExtractionUnavailable, propose_course_fields
+    from services.doc_extract import ExtractionError, extract_text
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="the uploaded file is empty")
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413, detail=f"file is larger than {_MAX_UPLOAD_BYTES // (1024 * 1024)}MB"
+        )
+
+    try:
+        text, method = extract_text(raw, file.filename or "upload", file.content_type or "")
+    except ExtractionError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    try:
+        fields = propose_course_fields(text)
+    except ExtractionUnavailable as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{error}. You can still fill the form in by hand.",
+        ) from error
+
+    logger.info(
+        "event=admin_course_extracted filename=%s method=%s chars=%d name=%r",
+        file.filename,
+        method,
+        len(text),
+        fields.get("name", ""),
+    )
+    return {"fields": fields, "extraction_method": method, "characters": len(text)}
+
+
 @app.post("/admin/api/courses/{slug}/active")
 async def admin_api_course_set_active(slug: str, request: Request):
     """Archive (active=false) or reactivate a course.
