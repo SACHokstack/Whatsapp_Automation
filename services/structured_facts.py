@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -12,14 +13,25 @@ from services.knowledge_base import load_knowledge_base
 _POLICY_PATH = Path(__file__).resolve().parents[1] / "knowledge" / "policies.yaml"
 
 
+def _content_source() -> str:
+    return os.getenv("CONTENT_SOURCE", "files").strip().lower()
+
+
 @lru_cache(maxsize=2)
-def _load_policies_cached(mtime_ns: int) -> dict:
-    del mtime_ns
+def _load_policies_cached(_version) -> dict:
+    if isinstance(_version, tuple) and _version and _version[0] == "db":
+        from services.content_store import get_policies
+
+        return get_policies() or {}
     with _POLICY_PATH.open(encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
 
 
 def load_policies() -> dict:
+    if _content_source() == "db":
+        from services.content_store import content_version
+
+        return _load_policies_cached(("db", content_version()))
     return _load_policies_cached(_POLICY_PATH.stat().st_mtime_ns)
 
 

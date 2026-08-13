@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -9,6 +11,12 @@ import yaml
 
 _ROOT = Path(__file__).resolve().parents[1]
 _COURSES_DIR = _ROOT / "courses"
+
+
+def _content_source() -> str:
+    """'db' reads course content from Postgres/SQLite; 'files' (default) reads the repo files.
+    A deploy-level migration switch, not a per-request toggle, so files mode never hits the DB."""
+    return os.getenv("CONTENT_SOURCE", "files").strip().lower()
 
 
 @dataclass
@@ -56,8 +64,13 @@ def _strip_notes(text: str) -> str:
     return parts[0].strip()
 
 
-def course_content_version() -> tuple[tuple[str, int, int], ...]:
-    """Fingerprint course files so edits invalidate the process-local cache."""
+def course_content_version():
+    """Cache key that changes whenever course content changes. In DB mode it is the monotone
+    content_version bumped on every dashboard write; in files mode it fingerprints the files."""
+    if _content_source() == "db":
+        from services.content_store import content_version
+
+        return ("db", content_version())
     if not _COURSES_DIR.exists():
         return ()
     files = sorted(_COURSES_DIR.glob("*/config.yaml")) + sorted(_COURSES_DIR.glob("*/overview.md"))
@@ -67,9 +80,44 @@ def course_content_version() -> tuple[tuple[str, int, int], ...]:
     )
 
 
+def _course_from_row(row: dict) -> CourseConfig:
+    """Reconstruct a CourseConfig from a `courses` table row, identical to the file-loaded one."""
+
+    def _load_json(value, fallback):
+        if not value:
+            return fallback
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return fallback
+
+    return CourseConfig(
+        slug=row["slug"],
+        name=row.get("name") or row["slug"],
+        active=bool(row.get("active")),
+        dates=str(row.get("dates") or ""),
+        venue=str(row.get("venue") or ""),
+        fees=_load_json(row.get("fees_json"), {}),
+        hrdc_deadline=str(row.get("hrdc_deadline") or ""),
+        payment_deadline=str(row.get("payment_deadline") or ""),
+        hot_budget_threshold=int(row.get("hot_budget_threshold") or 4000),
+        keywords=[str(k).lower() for k in _load_json(row.get("keywords_json"), [])],
+        overview=row.get("overview") or "",
+        outreach=_load_json(row.get("outreach_json"), {}),
+    )
+
+
 @lru_cache(maxsize=4)
 def _load_courses_cached(_version) -> dict[str, CourseConfig]:
     courses: dict[str, CourseConfig] = {}
+
+    if _content_source() == "db":
+        from services.content_store import list_course_rows
+
+        for row in list_course_rows():
+            courses[row["slug"]] = _course_from_row(row)
+        return courses
+
     if not _COURSES_DIR.exists():
         return courses
 

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 _KNOWLEDGE_DIR = _ROOT / "knowledge"
+
+
+def _content_source() -> str:
+    return os.getenv("CONTENT_SOURCE", "files").strip().lower()
 
 DEFAULT_GENERAL_REPLY = "Thank you for your interest. A consultant will contact you shortly."
 
@@ -140,8 +145,12 @@ def _strip_internal_notes(text: str) -> str:
     return parts[0].strip()
 
 
-def knowledge_content_version() -> tuple[tuple[str, int, int], ...]:
-    """Fingerprint knowledge files so edits invalidate the local cache."""
+def knowledge_content_version():
+    """Cache key that changes on any knowledge edit: the DB content_version, or file fingerprints."""
+    if _content_source() == "db":
+        from services.content_store import content_version
+
+        return ("db", content_version())
     if not _KNOWLEDGE_DIR.exists():
         return ()
     return tuple(
@@ -153,6 +162,13 @@ def knowledge_content_version() -> tuple[tuple[str, int, int], ...]:
 @lru_cache(maxsize=4)
 def _load_knowledge_base_cached(_version) -> dict[str, str]:
     kb: dict[str, str] = {}
+
+    if _content_source() == "db":
+        from services.content_store import get_all_knowledge
+
+        # Notes are stripped at import time, so store raw and mirror the file path's stripping.
+        return {topic.lower(): _strip_internal_notes(body) for topic, body in get_all_knowledge().items()}
+
     if not _KNOWLEDGE_DIR.exists():
         return kb
     for path in _KNOWLEDGE_DIR.glob("*.md"):

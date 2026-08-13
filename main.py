@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 load_dotenv()
 
@@ -2584,8 +2584,75 @@ def rag_v2_health():
     return rag_health()
 
 
+def require_auth(request: Request, *, api: bool = False) -> None:
+    """Guard for admin pages and the PII endpoints. Raises redirect (page) or 401 (api/JSON)."""
+    from services.admin_auth import is_authenticated
+
+    if is_authenticated(request):
+        return
+    if api:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    raise HTTPException(status_code=303, headers={"Location": "/admin/login"})
+
+
+_ADMIN_LOGIN_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timmins Admin</title><style>
+body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;
+min-height:100vh;align-items:center;justify-content:center;margin:0}
+form{background:#1e293b;padding:2rem;border-radius:12px;width:min(90vw,320px);box-shadow:0 10px 40px rgba(0,0,0,.4)}
+h1{font-size:1.1rem;margin:0 0 1.2rem}input{width:100%;padding:.6rem;margin:.3rem 0 1rem;border-radius:8px;
+border:1px solid #334155;background:#0f172a;color:#e2e8f0;box-sizing:border-box}
+button{width:100%;padding:.6rem;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
+.err{color:#f87171;font-size:.85rem;margin-bottom:.6rem;min-height:1rem}</style></head>
+<body><form method="post" action="/admin/login">
+<h1>Timmins Admin</h1><div class="err">__ERROR__</div>
+<label>Password</label><input type="password" name="password" autofocus required>
+<button type="submit">Sign in</button></form></body></html>"""
+
+
+@app.get("/admin/login", response_class=HTMLResponse)
+def admin_login_page():
+    return HTMLResponse(_ADMIN_LOGIN_HTML.replace("__ERROR__", ""))
+
+
+@app.post("/admin/login")
+def admin_login(request: Request, password: str = Form(...)):
+    from services.admin_auth import (
+        COOKIE_NAME,
+        SESSION_TTL_SECONDS,
+        check_password,
+        create_session_token,
+    )
+
+    if not check_password(password):
+        return HTMLResponse(
+            _ADMIN_LOGIN_HTML.replace("__ERROR__", "Incorrect password."), status_code=401
+        )
+    response = RedirectResponse(url="/admin", status_code=303)
+    response.set_cookie(
+        COOKIE_NAME,
+        create_session_token(),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/admin/logout")
+def admin_logout():
+    from services.admin_auth import COOKIE_NAME
+
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie(COOKIE_NAME)
+    return response
+
+
 @app.get("/stats")
-def stats():
+def stats(request: Request):
+    require_auth(request, api=True)
     return get_dashboard_summary()
 
 
@@ -2611,7 +2678,8 @@ def sync_leads_now(request: Request):
 
 
 @app.get("/conversation/{phone}")
-def conversation(phone: str):
+def conversation(phone: str, request: Request):
+    require_auth(request, api=True)
     return {
         "phone": phone,
         "history": get_conversation_history(phone),
@@ -2619,7 +2687,8 @@ def conversation(phone: str):
 
 
 @app.get("/lead/{phone}")
-def lead_detail(phone: str):
+def lead_detail(phone: str, request: Request):
+    require_auth(request, api=True)
     return {
         "lead": get_lead(phone),
         "history": get_conversation_history(phone),
@@ -3254,6 +3323,13 @@ def _start_event_worker() -> None:
     _queue_worker = threading.Thread(target=_event_worker_loop, daemon=True)
     _queue_worker.start()
     _queue_wakeup.set()
+    # Seed the admin password from ADMIN_PASSWORD on first boot; no-op once one is set.
+    try:
+        from services.admin_auth import bootstrap_admin_password
+
+        bootstrap_admin_password()
+    except Exception:
+        logger.exception("event=admin_bootstrap_failed")
     # Build & vectorise the knowledge index off the request path so the first
     # customer reply isn't blocked on embedding-model load + encoding.
     threading.Thread(target=_warmup_rag, daemon=True).start()

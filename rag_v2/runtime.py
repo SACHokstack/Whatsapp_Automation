@@ -172,14 +172,62 @@ def _documents() -> list[CorpusDocument]:
             )
         )
 
+    active_slugs = {slug for slug, course in courses.items() if course.active}
+
+    if _content_source() == "db":
+        # DB is the single source of truth: the file-based external KB is superseded by the
+        # content tables (facts/overview/knowledge, already loaded above) plus dashboard uploads.
+        # Emitting uploaded docs here keeps a full rebuild from pruning ingested course_kb chunks
+        # (stable content-hash chunk_ids => a rebuild reproduces exactly what was ingested).
+        documents.extend(_uploaded_documents(active_slugs))
+        return documents
+
     # External KB: Q&A docx files + PDF course outlines. Exclude any bound to an
     # inactive course (e.g. Python Automation — not in NEW_Courses); keep company/
     # general KB (course_id is None).
-    active_slugs = {slug for slug, course in courses.items() if course.active}
     for doc in build_kb_documents():
         if doc.course_id is None or doc.course_id in active_slugs:
             documents.append(doc)
     return documents
+
+
+def _content_source() -> str:
+    return os.getenv("CONTENT_SOURCE", "files").strip().lower()
+
+
+def _uploaded_documents(active_slugs: set[str]) -> list[CorpusDocument]:
+    """Uploaded, ingested course docs from the `documents` table, as CorpusDocuments.
+
+    Built the same way `services.course_ingest` builds them for ingestion, so a rebuild yields
+    identical (stable content-hash) chunk_ids. Empty until the dashboard ingests anything."""
+    try:
+        from services.content_store import list_indexed_documents
+
+        rows = list_indexed_documents()
+    except Exception:
+        logger.exception("event=rag_v2_uploaded_documents_failed")
+        return []
+
+    docs: list[CorpusDocument] = []
+    for row in rows:
+        slug = row.get("course_slug")
+        if slug not in active_slugs:
+            continue
+        text = (row.get("extracted_text") or "").strip()
+        if not text:
+            continue
+        docs.append(
+            CorpusDocument(
+                document_id=f"{slug}-upload-{row['id']}",
+                title=f"{slug} uploaded document {row.get('filename', '')}".strip(),
+                text=text,
+                source_ref=f"upload/{row.get('filename', row['id'])}",
+                course_id=slug,
+                topic="course_kb",
+                metadata={"authority": "approved_course_files"},
+            )
+        )
+    return docs
 
 
 _PROFILE_FIELDS = (
