@@ -6,18 +6,57 @@ redeploy. The second is `test_ingesting_one_course_leaves_other_chunks_alone`: t
 `sync()` prunes globally, so if the per-course write ever did the same it would silently wipe the
 rest of the index.
 
-Uses the hashing embedder (RAG_EMBEDDER=hashing) so no model has to load, and the temp SQLite
-vector store conftest points the suite at.
+Uses the hashing embedder so no model has to load. That is selected per-test via
+`_HashingEmbedderMixin` rather than at import time — setting RAG_EMBEDDER globally would
+follow the whole test session into other modules and quietly swap the embedder they run
+against.
 """
 
 import os
 import unittest
+import unittest.mock
 
-os.environ.setdefault("RAG_EMBEDDER", "hashing")
+from rag_v2.embeddings import configured_embedder
+from rag_v2.models import Chunk
+from rag_v2.store import SQLiteVectorStore
 
-from rag_v2.embeddings import configured_embedder  # noqa: E402
-from rag_v2.models import Chunk  # noqa: E402
-from rag_v2.store import SQLiteVectorStore  # noqa: E402
+
+class _HashingEmbedderMixin:
+    """Run each test against a private, throwaway vector index using the hashing embedder.
+
+    Self-contained on purpose: CI runs `unittest discover`, which does not load pytest's
+    conftest, so these tests cannot rely on it to redirect RAG_V2_INDEX. Without this the
+    tests would open the real index — built with a different embedding model — and fail with
+    IndexCompatibilityError.
+    """
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        import rag_v2.runtime as runtime
+
+        index_dir = tempfile.mkdtemp(prefix="p2-rag-")
+        self._env = unittest.mock.patch.dict(
+            os.environ,
+            {
+                "RAG_EMBEDDER": "hashing",
+                "RAG_V2_INDEX": str(Path(index_dir) / "rag.sqlite"),
+                "RAG_STORE": "",  # SQLite store, never the shared Postgres one
+            },
+        )
+        self._env.start()
+        self.addCleanup(self._env.stop)
+
+        # The runtime caches its store path at construction, so it has to be rebuilt against
+        # the patched environment — and put back afterwards for whatever runs next.
+        previous_runtime = runtime._runtime
+        runtime._runtime = None
+        self.addCleanup(setattr, runtime, "_runtime", previous_runtime)
+        self.addCleanup(shutil.rmtree, index_dir, ignore_errors=True)
+        super().setUp()
+
 
 DIGITAL_PDF_TEXT = (
     "Timmins Advanced Widget Engineering runs in the Kuala Lumpur lab. "
@@ -43,13 +82,14 @@ def _chunk(chunk_id, course_id, text="hello world"):
     )
 
 
-class ScopedPruneTests(unittest.TestCase):
+class ScopedPruneTests(_HashingEmbedderMixin, unittest.TestCase):
     """sync_course must never touch another course's chunks, or the catalog's."""
 
     def setUp(self):
         import tempfile
         from pathlib import Path
 
+        super().setUp()  # selects the hashing embedder before one is constructed
         self.dir = tempfile.mkdtemp(prefix="p2-store-")
         self.store = _store(Path(self.dir) / "index.sqlite")
         self.embedder = configured_embedder()
@@ -123,6 +163,9 @@ class DocumentQueueTests(unittest.TestCase):
 
         self.cs = cs
         cs.upsert_course("queue-test-course", {"name": "Queue Test", "active": True})
+        # Remove the fixture again: the content DB is shared with the rest of the suite, and a
+        # stray course would show up in another module's view of the catalogue.
+        self.addCleanup(cs.delete_course, "queue-test-course")
 
     def test_claim_is_exactly_once(self):
         doc_id = self.cs.add_document("queue-test-course", "a.txt", "text/plain", b"hello there")
@@ -152,12 +195,13 @@ class DocumentQueueTests(unittest.TestCase):
         self.assertIsNone(self.cs.get_document(doc_id))
 
 
-class IngestEndToEndTests(unittest.TestCase):
+class IngestEndToEndTests(_HashingEmbedderMixin, unittest.TestCase):
     """Upload -> extract -> chunk -> embed -> retrievable, in-process, with no restart."""
 
     def setUp(self):
         from services import content_store as cs
 
+        super().setUp()  # selects the hashing embedder before ingestion runs
         self.cs = cs
         self.slug = "widget-engineering"
         cs.upsert_course(self.slug, {"name": "Advanced Widget Engineering", "active": True})

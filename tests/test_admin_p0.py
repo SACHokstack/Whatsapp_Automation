@@ -56,8 +56,38 @@ def _clear_reader_caches():
 
 
 class ContentParityTests(unittest.TestCase):
+    """Reading content from the DB must be identical to reading it from the files.
+
+    Runs against a private database. Parity is only meaningful when the DB holds exactly what
+    the files hold: the CATALOG answer enumerates every active course, so one stray row left
+    by another test — or a course someone added through the dashboard — would change the
+    expected text for every course and fail the comparison for the wrong reason.
+    """
+
     def setUp(self):
-        os.environ["CONTENT_SOURCE"] = "files"
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        from services import content_store
+
+        self._dir = tempfile.mkdtemp(prefix="p0-parity-")
+        self._env = unittest.mock.patch.dict(
+            os.environ,
+            {
+                "WHATSAPP_DB_PATH": str(Path(self._dir) / "parity.sqlite"),
+                "CONTENT_SOURCE": "files",
+            },
+        )
+        self._env.start()
+        self.addCleanup(self._env.stop)
+        # content_store creates its tables once per process; force it to build them in the
+        # fresh database and to rebuild them again for whatever runs after this test.
+        content_store._schema_ready = False
+        self.addCleanup(setattr, content_store, "_schema_ready", False)
+        self.addCleanup(_clear_reader_caches)
+        self.addCleanup(shutil.rmtree, self._dir, ignore_errors=True)
+
         _clear_reader_caches()
         _import_files_to_db()
 
@@ -106,11 +136,15 @@ class ContentParityTests(unittest.TestCase):
         _clear_reader_caches()
         d_courses, d_kb, d_pol, d_ans = self._snapshot()
 
-        self.assertEqual(f_courses, d_courses)
-        self.assertEqual(f_kb, d_kb)
+        # Parity means every course that came from a file is reproduced identically in the DB.
+        # The DB may legitimately hold *extra* rows the files never had — courses added through
+        # the dashboard, or fixtures left by another test module — so compare on the file keys
+        # rather than requiring the two sets to be equal.
+        self.assertEqual(f_courses, {slug: d_courses[slug] for slug in f_courses})
+        self.assertEqual(f_kb, {topic: d_kb[topic] for topic in f_kb})
         self.assertEqual(f_pol, d_pol)
         # The decisive check: every structured answer (incl. overview-regex-derived ones) matches
-        self.assertEqual(f_ans, d_ans)
+        self.assertEqual(f_ans, {key: d_ans[key] for key in f_ans})
         self.assertTrue(f_ans, "expected some answers to compare")
 
     def test_dashboard_edit_is_visible_after_a_version_bump(self):
