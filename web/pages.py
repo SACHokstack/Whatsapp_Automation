@@ -697,99 +697,107 @@ _WA_SIMULATOR_HTML = """<!doctype html>
 _ADMIN_LOGIN_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Timmins Admin</title><style>
-body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;
-min-height:100vh;align-items:center;justify-content:center;margin:0}
-form{background:#1e293b;padding:2rem;border-radius:12px;width:min(90vw,320px);box-shadow:0 10px 40px rgba(0,0,0,.4)}
-h1{font-size:1.1rem;margin:0 0 1.2rem}input{width:100%;padding:.6rem;margin:.3rem 0 1rem;border-radius:8px;
-border:1px solid #334155;background:#0f172a;color:#e2e8f0;box-sizing:border-box}
-button{width:100%;padding:.6rem;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
-.err{color:#f87171;font-size:.85rem;margin-bottom:.6rem;min-height:1rem}</style></head>
+:root{color-scheme:light;--ink:#172033;--muted:#65738a;--line:#d9e2ee;--soft:#f6f8fb;
+--panel:#ffffff;--brand:#0f766e;--brand-dark:#115e59;--danger:#b42318}
+*{box-sizing:border-box}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+background:linear-gradient(135deg,#effaf8 0%,#f7f1e8 48%,#eef4ff 100%);color:var(--ink);display:flex;
+min-height:100vh;align-items:center;justify-content:center;margin:0;padding:1.2rem}
+form{background:rgba(255,255,255,.92);padding:2rem;border-radius:8px;width:min(92vw,380px);
+box-shadow:0 24px 60px rgba(23,32,51,.18);border:1px solid rgba(255,255,255,.8)}
+.mark{width:42px;height:42px;border-radius:8px;background:#0f766e;color:#fff;display:grid;place-items:center;
+font-weight:800;margin-bottom:1rem}h1{font-size:1.45rem;margin:0 0 .25rem;letter-spacing:0}
+p{margin:0 0 1.4rem;color:var(--muted);font-size:.93rem;line-height:1.45}label{display:block;color:#344256;
+font-size:.86rem;font-weight:700;margin-bottom:.35rem}input{width:100%;padding:.78rem .85rem;margin:0 0 1rem;border-radius:8px;
+border:1px solid var(--line);background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(23,32,51,.04)}
+input:focus{outline:3px solid rgba(15,118,110,.18);border-color:var(--brand)}button{width:100%;padding:.78rem;border:0;
+border-radius:8px;background:var(--brand);color:#fff;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(15,118,110,.24)}
+button:hover{background:var(--brand-dark)}.err{color:var(--danger);font-size:.88rem;margin-bottom:.75rem;min-height:1rem;
+font-weight:700}</style></head>
 <body><form method="post" action="/admin/login">
-<h1>Timmins Admin</h1><div class="err">__ERROR__</div>
-<label>Password</label><input type="password" name="password" autofocus required>
+<div class="mark">TA</div><h1>Welcome back</h1><p>Sign in to manage leads, courses and bot knowledge.</p>
+<div class="err">__ERROR__</div><label>Password</label><input type="password" name="password" autofocus required>
 <button type="submit">Sign in</button></form></body></html>"""
 
 
 _ADMIN_SHELL = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Timmins Admin · __TITLE__</title><style>
-:root{color-scheme:dark}
+:root{color-scheme:light;--bg:#f5f7fb;--panel:#ffffff;--panel-soft:#f8fafc;--ink:#172033;
+--muted:#64748b;--faint:#8a98ab;--line:#dbe4ef;--line-soft:#edf1f6;--brand:#0f766e;
+--brand-dark:#115e59;--brand-soft:#d9f3ee;--blue:#2563eb;--blue-soft:#dbeafe;--amber:#a16207;
+--amber-soft:#fef3c7;--danger:#b42318;--danger-soft:#fee4e2;--success:#047857;--success-soft:#d1fae5}
 *{box-sizing:border-box}
-body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;margin:0}
-header{background:#1e293b;border-bottom:1px solid #334155;padding:.7rem 1.2rem;
-display:flex;align-items:center;gap:1.4rem;flex-wrap:wrap;position:sticky;top:0;z-index:5}
-header .brand{font-weight:700;color:#fff}
-nav{display:flex;gap:.3rem;flex-wrap:wrap}
-nav a{color:#94a3b8;text-decoration:none;padding:.35rem .7rem;border-radius:8px;font-size:.9rem}
-nav a:hover{background:#0f172a;color:#e2e8f0}
-nav a.on{background:#2563eb;color:#fff}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+background:var(--bg);color:var(--ink);margin:0;line-height:1.45}
+header{background:rgba(255,255,255,.94);border-bottom:1px solid var(--line);padding:.85rem 1.2rem;
+display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap;position:sticky;top:0;z-index:5;backdrop-filter:blur(12px)}
+header .brand{font-weight:850;color:var(--ink);display:flex;align-items:center;gap:.6rem;letter-spacing:0}
+header .brand:before{content:'TA';width:34px;height:34px;border-radius:8px;background:var(--brand);color:#fff;
+display:grid;place-items:center;font-size:.8rem;font-weight:900}
+nav{display:flex;gap:.35rem;flex-wrap:wrap;background:#eef3f8;border:1px solid var(--line);border-radius:8px;padding:.2rem}
+nav a{color:#475569;text-decoration:none;padding:.45rem .75rem;border-radius:7px;font-size:.9rem;font-weight:700}
+nav a:hover{background:#fff;color:var(--ink)}
+nav a.on{background:var(--brand);color:#fff;box-shadow:0 8px 18px rgba(15,118,110,.18)}
 header .sp{flex:1}
-header form{margin:0}
-header button{background:transparent;border:1px solid #334155;color:#94a3b8;padding:.35rem .7rem;
-border-radius:8px;cursor:pointer;font-size:.85rem}
-main{padding:1.3rem;max-width:1100px;margin:0 auto}
-h1{font-size:1.25rem;margin:.2rem 0 1.1rem}
-h2{font-size:1rem;margin:1.4rem 0 .6rem;color:#cbd5e1}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.9rem}
-.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:1rem}
-.card .n{font-size:1.8rem;font-weight:700;color:#fff}
-.card .l{color:#94a3b8;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+header form{margin:0}header button{background:#fff;border:1px solid var(--line);color:#475569;padding:.45rem .75rem;
+border-radius:8px;cursor:pointer;font-size:.86rem;font-weight:700}header button:hover{border-color:#bac7d6;color:var(--ink)}
+main{padding:1.6rem;max-width:1180px;margin:0 auto;width:100%}.page-head{margin:.35rem 0 1.15rem;
+display:flex;justify-content:space-between;gap:1rem;align-items:flex-end;flex-wrap:wrap}.eyebrow{font-size:.75rem;
+text-transform:uppercase;letter-spacing:.08em;color:var(--brand);font-weight:850;margin:0 0 .25rem}
+h1{font-size:1.75rem;margin:0;color:#111827;letter-spacing:0}h2{font-size:1.05rem;margin:1.5rem 0 .65rem;color:#273449}
+.sub{color:var(--muted);margin:.25rem 0 0;max-width:680px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.9rem}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:1rem;box-shadow:0 10px 28px rgba(23,32,51,.06)}
+.card .n{font-size:2rem;font-weight:850;color:#111827;line-height:1.1}.card .l{color:var(--muted);font-size:.8rem;
+text-transform:uppercase;letter-spacing:.05em;font-weight:800;margin-top:.45rem}.table-wrap{background:var(--panel);border:1px solid var(--line);
+border-radius:8px;overflow:auto;box-shadow:0 10px 28px rgba(23,32,51,.05)}
 table{width:100%;border-collapse:collapse;font-size:.88rem}
-th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid #1e293b}
-th{color:#94a3b8;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
-tbody tr:hover{background:#1e293b;cursor:pointer}
-.pill{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.72rem;
-background:#334155;color:#cbd5e1}
-.pill.active{background:#064e3b;color:#6ee7b7}
-.pill.archived{background:#3f2937;color:#fca5a5}
-.muted{color:#64748b}
-select,input{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;
-padding:.4rem .6rem;font-size:.85rem}
-.row{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem}
-pre{white-space:pre-wrap;word-break:break-word;background:#0b1220;border:1px solid #1e293b;
-border-radius:10px;padding:.9rem;font-size:.82rem;line-height:1.5;margin:0}
-.drawer{position:fixed;top:0;right:0;height:100vh;width:min(92vw,460px);background:#0b1220;
-border-left:1px solid #334155;box-shadow:-10px 0 40px rgba(0,0,0,.5);transform:translateX(100%);
+th,td{text-align:left;padding:.72rem .8rem;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{color:var(--muted);font-weight:850;font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;background:#f8fafc}
+tbody tr:hover{background:#f2f7fb;cursor:pointer}.pill{display:inline-flex;align-items:center;padding:.18rem .55rem;border-radius:999px;
+font-size:.74rem;background:#eef2f7;color:#475569;font-weight:800}.pill.active{background:var(--success-soft);color:var(--success)}
+.pill.archived{background:var(--danger-soft);color:var(--danger)}.muted{color:var(--muted)}select,input{background:#fff;color:var(--ink);
+border:1px solid var(--line);border-radius:8px;padding:.55rem .7rem;font-size:.88rem;box-shadow:0 1px 2px rgba(23,32,51,.03)}
+select:focus,input:focus,textarea:focus{outline:3px solid rgba(15,118,110,.16);border-color:var(--brand)}.row{display:flex;gap:.7rem;
+flex-wrap:wrap;align-items:center;margin-bottom:1rem}.row .muted{font-weight:700}pre{white-space:pre-wrap;word-break:break-word;
+background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:.9rem;font-size:.82rem;line-height:1.5;margin:0}
+.drawer{position:fixed;top:0;right:0;height:100vh;width:min(94vw,520px);background:#fff;
+border-left:1px solid var(--line);box-shadow:-18px 0 50px rgba(23,32,51,.16);transform:translateX(100%);
 transition:transform .18s;z-index:20;display:flex;flex-direction:column}
 .drawer.open{transform:none}
-.drawer .dh{padding:1rem 1.2rem;border-bottom:1px solid #1e293b;display:flex;
+.drawer .dh{padding:1rem 1.2rem;border-bottom:1px solid var(--line);display:flex;
 justify-content:space-between;align-items:center}
 .drawer .db{padding:1rem 1.2rem;overflow-y:auto;flex:1}
-.drawer .x{cursor:pointer;color:#94a3b8;background:transparent;border:0;font-size:1.3rem}
+.drawer .x{cursor:pointer;color:var(--muted);background:#f1f5f9;border:1px solid var(--line);font-size:1.15rem;
+width:34px;height:34px;border-radius:8px}
 .msg{margin:.5rem 0;padding:.55rem .7rem;border-radius:10px;max-width:85%;font-size:.85rem;line-height:1.4}
-.msg.inbound{background:#1e293b;margin-right:auto}
-.msg.outbound{background:#1d3a5f;margin-left:auto}
-.msg .d{font-size:.68rem;color:#94a3b8;margin-bottom:.15rem}
-.empty{color:#64748b;padding:2rem;text-align:center}
-.note{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:.7rem .9rem;
-color:#94a3b8;font-size:.82rem;margin-bottom:1rem}
-a.link{color:#60a5fa}
-textarea{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;
+.msg.inbound{background:#f1f5f9;margin-right:auto}.msg.outbound{background:#dff3ee;margin-left:auto}.msg .d{font-size:.68rem;
+color:var(--muted);margin-bottom:.15rem}.empty{color:var(--muted);padding:2rem;text-align:center;background:#f8fafc;
+border:1px dashed var(--line);border-radius:8px}.note{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:.8rem 1rem;
+color:#526174;font-size:.86rem;margin-bottom:1rem}a.link{color:var(--blue)}textarea{background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:8px;
 padding:.6rem;font-size:.85rem;width:100%;font-family:ui-monospace,monospace;line-height:1.5}
-label.f{display:block;margin:.7rem 0 .2rem;color:#94a3b8;font-size:.8rem;
-text-transform:uppercase;letter-spacing:.03em}
+label.f{display:block;margin:.8rem 0 .25rem;color:#475569;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;font-weight:850}
 label.f input,label.f textarea,label.f select{width:100%}
-.btn{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:.45rem .9rem;
-cursor:pointer;font-size:.85rem;font-weight:600}
-.btn.ghost{background:transparent;border:1px solid #334155;color:#cbd5e1;font-weight:500}
-.btn.danger{background:#7f1d1d;color:#fecaca}
+.btn{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:.58rem .95rem;
+cursor:pointer;font-size:.87rem;font-weight:850;box-shadow:0 8px 18px rgba(15,118,110,.18)}
+.btn:hover{background:var(--brand-dark)}.btn.ghost{background:#fff;border:1px solid var(--line);color:#475569;font-weight:800;box-shadow:none}
+.btn.ghost:hover{background:#f8fafc;color:#172033}.btn.danger{background:var(--danger);color:#fff;box-shadow:0 8px 18px rgba(180,35,24,.16)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btns{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem}
 .toast{position:fixed;bottom:1.2rem;left:50%;transform:translateX(-50%) translateY(200%);
-background:#1d3a5f;color:#e2e8f0;padding:.7rem 1.2rem;border-radius:10px;font-size:.87rem;
-transition:transform .2s;z-index:50;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:90vw}
+background:#173b35;color:#fff;padding:.78rem 1.2rem;border-radius:8px;font-size:.88rem;
+transition:transform .2s;z-index:50;box-shadow:0 14px 34px rgba(23,32,51,.18);max-width:90vw}
 .toast.show{transform:translateX(-50%)}
-.toast.bad{background:#7f1d1d;color:#fecaca}
-.warn{background:#422006;border:1px solid #854d0e;color:#fcd34d;border-radius:10px;
+.toast.bad{background:var(--danger);color:#fff}.warn{background:var(--amber-soft);border:1px solid #f2cf75;color:#6f4600;border-radius:8px;
 padding:.7rem .9rem;font-size:.83rem;margin-bottom:1rem}
-.doc{display:flex;align-items:center;gap:.6rem;padding:.5rem 0;border-bottom:1px solid #1e293b;
+.doc{display:flex;align-items:center;gap:.6rem;padding:.65rem 0;border-bottom:1px solid var(--line-soft);
 font-size:.85rem}
 .doc .g{flex:1;min-width:0}
 .doc .fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.st{font-size:.72rem;padding:.1rem .5rem;border-radius:999px;background:#334155}
-.st.indexed{background:#064e3b;color:#6ee7b7}
-.st.failed{background:#7f1d1d;color:#fca5a5}
-.st.pending,.st.extracting,.st.embedding{background:#1e3a5f;color:#93c5fd}
+.st{font-size:.72rem;padding:.14rem .5rem;border-radius:999px;background:#eef2f7;color:#475569;font-weight:800}
+.st.indexed{background:var(--success-soft);color:var(--success)}.st.failed{background:var(--danger-soft);color:var(--danger)}
+.st.pending,.st.extracting,.st.embedding{background:var(--blue-soft);color:var(--blue)}@media(max-width:720px){header{align-items:flex-start}
+nav{width:100%;overflow:auto;flex-wrap:nowrap}nav a{white-space:nowrap}main{padding:1rem}.page-head{align-items:flex-start}.cards{grid-template-columns:1fr}
+.drawer{width:100vw}.table-wrap table{min-width:680px}}
 </style></head><body>
 <div class="toast" id="toast"></div>
 <header>
@@ -835,10 +843,11 @@ def _admin_page(nav: str, title: str, body: str, script: str) -> str:
     )
 
 
-_ADMIN_HOME_BODY = """<h1>Overview</h1>
+_ADMIN_HOME_BODY = """<section class="page-head"><div><div class="eyebrow">Today at a glance</div>
+<h1>Overview</h1><p class="sub">A quick health check for leads, messages, course content and bot knowledge.</p></div></section>
 <div class="cards" id="cards"><div class="muted">Loading…</div></div>
 <h2>Leads by status</h2>
-<table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody id="st"></tbody></table>"""
+<div class="table-wrap"><table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody id="st"></tbody></table></div>"""
 
 _ADMIN_HOME_SCRIPT = """(async()=>{
 const s=await api('/admin/api/summary');
@@ -852,14 +861,15 @@ document.getElementById('st').innerHTML=(s.leads_by_status||[]).map(r=>
  ||'<tr><td colspan=2 class="muted">No leads yet.</td></tr>';
 })().catch(e=>{});"""
 
-_ADMIN_LEADS_BODY = """<h1>Leads</h1>
+_ADMIN_LEADS_BODY = """<section class="page-head"><div><div class="eyebrow">Conversations</div>
+<h1>Leads</h1><p class="sub">Filter enquiries, open a lead, and review the WhatsApp conversation in one place.</p></div></section>
 <div class="row">
 <select id="status"><option value="">All statuses</option></select>
 <select id="course"><option value="">All courses</option></select>
 <span class="muted" id="count"></span>
 </div>
-<table><thead><tr><th>Name</th><th>Phone</th><th>Course</th><th>Status</th><th>Updated</th></tr></thead>
-<tbody id="rows"><tr><td colspan=5 class="muted">Loading…</td></tr></tbody></table>
+<div class="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Course</th><th>Status</th><th>Updated</th></tr></thead>
+<tbody id="rows"><tr><td colspan=5 class="muted">Loading…</td></tr></tbody></table></div>
 <div class="drawer" id="drawer">
 <div class="dh"><strong id="dName">Lead</strong><button class="x" onclick="closeDrawer()">×</button></div>
 <div class="db" id="dBody"></div></div>"""
@@ -902,12 +912,13 @@ function closeDrawer(){document.getElementById('drawer').classList.remove('open'
  await load();
 })().catch(e=>{});"""
 
-_ADMIN_COURSES_BODY = """<h1>Courses</h1>
+_ADMIN_COURSES_BODY = """<section class="page-head"><div><div class="eyebrow">Training catalogue</div>
+<h1>Courses</h1><p class="sub">Keep dates, fees, venues and source documents ready for the WhatsApp bot.</p></div>
+<button class="btn" onclick="openCourse(null)">+ Add course</button></section>
 <div id="banner"></div>
-<div class="row"><button class="btn" onclick="openCourse(null)">+ Add course</button>
-<span class="muted" id="count"></span></div>
-<table><thead><tr><th>Course</th><th>Status</th><th>Dates</th><th>Venue</th><th>Docs</th></tr></thead>
-<tbody id="rows"><tr><td colspan=5 class="muted">Loading…</td></tr></tbody></table>
+<div class="row"><span class="muted" id="count"></span></div>
+<div class="table-wrap"><table><thead><tr><th>Course</th><th>Status</th><th>Dates</th><th>Venue</th><th>Docs</th></tr></thead>
+<tbody id="rows"><tr><td colspan=5 class="muted">Loading…</td></tr></tbody></table></div>
 <div class="drawer" id="drawer">
 <div class="dh"><strong id="dName">Course</strong><button class="x" onclick="closeDrawer()">×</button></div>
 <div class="db" id="dBody"></div></div>"""
@@ -1077,14 +1088,15 @@ async function loadDocs(){
 }
 loadList().catch(e=>{});"""
 
-_ADMIN_KNOWLEDGE_BODY = """<h1>Company knowledge</h1>
+_ADMIN_KNOWLEDGE_BODY = """<section class="page-head"><div><div class="eyebrow">Bot answers</div>
+<h1>Company knowledge</h1><p class="sub">Update the permanent information the bot uses across every course.</p></div>
+<button class="btn" onclick="openTopic(null)">+ Add topic</button></section>
 <div id="banner"></div>
 <div class="note">Permanent information the bot uses for every course — who the company is,
 payment terms, cancellation rules. Changes take effect on the next message.</div>
-<div class="row"><button class="btn" onclick="openTopic(null)">+ Add topic</button>
-<span class="muted" id="count"></span></div>
-<table><thead><tr><th>Topic</th><th>Preview</th></tr></thead>
-<tbody id="rows"><tr><td colspan=2 class="muted">Loading…</td></tr></tbody></table>
+<div class="row"><span class="muted" id="count"></span></div>
+<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Preview</th></tr></thead>
+<tbody id="rows"><tr><td colspan=2 class="muted">Loading…</td></tr></tbody></table></div>
 <h2>Policies</h2>
 <div class="note">Structured rules (payment, cancellation tiers, certification, company details).
 Edit as JSON — it is validated before saving.</div>
