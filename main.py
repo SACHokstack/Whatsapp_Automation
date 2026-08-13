@@ -1921,17 +1921,27 @@ def readiness():
     except Exception as error:
         logger.exception("event=readiness_failed")
         raise HTTPException(status_code=503, detail="Storage unavailable") from error
-    return {
+    payload = {
         "status": "ready",
         "database": persistence_backend_name(),
         "leads": summary["total_leads"],
         "queue": events,
         "safe_mode": get_bool("BOT_SAFE_MODE", True),
+        "content_source": os.getenv("CONTENT_SOURCE", "files").strip().lower(),
+        "courses": len(load_courses()),
         "lead_pipeline": {
             "sync_interval_minutes": _lead_sync_interval_seconds() // 60,
             "auto_outreach": auto_outreach_enabled(),
         },
     }
+    # A catalogue of nothing is the shape of a deployment switched to DB content before the
+    # import was run. The bot keeps answering from RAG, which hides it — so say so plainly.
+    if payload["content_source"] == "db" and payload["courses"] == 0:
+        payload["warning"] = (
+            "No courses found. CONTENT_SOURCE=db but the content tables are empty — run "
+            "scripts/import_content_to_db.py, or unset CONTENT_SOURCE to read the files."
+        )
+    return payload
 
 
 @app.get("/rag-v2/health")
@@ -3253,6 +3263,18 @@ def _start_event_worker() -> None:
         bootstrap_admin_password()
     except Exception:
         logger.exception("event=admin_bootstrap_failed")
+
+    # Say so at boot if the deployment is pointed at DB content that was never imported. The
+    # bot still answers from the search index, which masks an empty catalogue for a long time.
+    try:
+        if os.getenv("CONTENT_SOURCE", "files").strip().lower() == "db" and not load_courses():
+            logger.error(
+                "event=content_source_db_but_empty "
+                "detail='CONTENT_SOURCE=db but no courses are in the database; "
+                "run scripts/import_content_to_db.py or unset CONTENT_SOURCE'"
+            )
+    except Exception:
+        logger.exception("event=content_source_check_failed")
     # Build & vectorise the knowledge index off the request path so the first
     # customer reply isn't blocked on embedding-model load + encoding.
     threading.Thread(target=_warmup_rag, daemon=True).start()

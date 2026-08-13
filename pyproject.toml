@@ -26,6 +26,7 @@ select = ["E4", "E7", "E9", "F", "I"]
 "setup_sheet.py" = ["E402"]
 "sync_leads.py" = ["E402"]
 "scripts/import_content_to_db.py" = ["E402"]
+"scripts/export_content_from_db.py" = ["E402"]
 "scripts/evaluate_responses.py" = ["E402"]
 
 [tool.ruff.format]

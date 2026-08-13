@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -34,14 +35,57 @@ from services.knowledge_base import load_knowledge_base
 from services.structured_facts import load_policies
 
 
+def _describe_target() -> str:
+    """Name the target database in a way that makes a mistake obvious before it happens."""
+    url = os.getenv("DATABASE_URL", "").strip()
+    if not url:
+        from services.sqlite_store import _db_path
+
+        return f"sqlite ({_db_path()})"
+    host = re.sub(r"^.*@", "", url.split("?", 1)[0])  # never print the credentials
+    return f"postgresql ({host})"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Import file content into the content tables")
     parser.add_argument("--dry-run", action="store_true", help="Report without writing")
+    parser.add_argument(
+        "--allow-sqlite",
+        action="store_true",
+        help="Permit importing into a local SQLite file (default: refuse, since the usual "
+        "target is the deployed Postgres and falling back silently is how content goes missing)",
+    )
     args = parser.parse_args()
 
     backend = cs.backend_name()
-    print(f"Target DB : {backend}")
+    print(f"Target DB : {_describe_target()}")
     print(f"Mode      : {'DRY RUN' if args.dry_run else 'LIVE'}\n")
+
+    if backend != "postgresql" and not args.allow_sqlite:
+        print(
+            "Refusing to run: DATABASE_URL is not set, so this would import into a local SQLite\n"
+            "file rather than the deployed database, and the deployment would see no change.\n\n"
+            "  Set DATABASE_URL to the Postgres URL, e.g.\n"
+            "    DATABASE_URL='postgresql://...' python scripts/import_content_to_db.py\n\n"
+            "  Or pass --allow-sqlite if a local import is genuinely what you want.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    # Open a connection now, even on a dry run: reporting a tidy plan and then failing to
+    # connect is worse than failing immediately.
+    try:
+        with cs._get_connection():
+            pass
+    except Exception as error:  # noqa: BLE001 - the message is the whole point here
+        print(f"Cannot reach the database: {error}", file=sys.stderr)
+        if "railway.internal" in str(error):
+            print(
+                "\nThat host only resolves inside Railway. From your machine use the Postgres\n"
+                "service's DATABASE_PUBLIC_URL instead.",
+                file=sys.stderr,
+            )
+        raise SystemExit(1) from error
 
     courses = load_courses()
     knowledge = load_knowledge_base()

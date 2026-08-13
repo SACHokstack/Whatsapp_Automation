@@ -41,3 +41,6 @@ TIMMINS TRAINING - Meta Lead sautomation.docx
 # Editor settings are personal, not project config
 .vscode/
 .idea/
+
+# Content exported from the database for backup — regenerate with scripts/export_content_from_db.py
+content_export/
