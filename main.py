@@ -2135,6 +2135,19 @@ def _publish_content_change() -> None:
     refresh_courses()
 
 
+def _publish_knowledge_change() -> None:
+    """Same, for company knowledge and policies.
+
+    The readers cache on the content version, so the bump alone is what makes an edit visible;
+    clearing the knowledge cache here just avoids waiting for the next version check.
+    """
+    from services.content_store import bump_content_version
+    from services.knowledge_base import refresh_knowledge_base
+
+    bump_content_version()
+    refresh_knowledge_base()
+
+
 @app.post("/admin/api/courses")
 async def admin_api_course_save(request: Request):
     """Create or update a course. The slug is derived from the name on create and is then fixed."""
@@ -2312,7 +2325,77 @@ def admin_api_knowledge(request: Request):
     from services.knowledge_base import load_knowledge_base
 
     topics = [{"topic": t, "body": b} for t, b in sorted(load_knowledge_base().items())]
-    return {"topics": topics, "policies": load_policies()}
+    return {
+        "editable": os.getenv("CONTENT_SOURCE", "files").strip().lower() == "db",
+        "topics": topics,
+        "policies": load_policies(),
+    }
+
+
+# --- company knowledge editing (P3) ---
+#
+# Company knowledge is the permanent half of the content: policies, payment terms, what the
+# company is. Unlike courses it is not seasonal, so there is no archive — just edit and delete.
+
+
+@app.post("/admin/api/knowledge")
+async def admin_api_knowledge_save(request: Request):
+    """Create or update one knowledge topic (the old knowledge/<topic>.md)."""
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.content_store import upsert_knowledge
+
+    payload = await request.json()
+    topic = re.sub(r"[^a-z0-9_]+", "_", str(payload.get("topic") or "").strip().lower()).strip("_")
+    if not topic:
+        raise HTTPException(status_code=400, detail="topic is required")
+    body = str(payload.get("body") or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="body cannot be empty")
+
+    upsert_knowledge(topic, body)
+    _publish_knowledge_change()
+    logger.info("event=admin_knowledge_saved topic=%s chars=%d", topic, len(body))
+    return {"topic": topic, "saved": True}
+
+
+@app.delete("/admin/api/knowledge/{topic}")
+def admin_api_knowledge_delete(topic: str, request: Request):
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.content_store import delete_knowledge, get_all_knowledge
+
+    if topic not in get_all_knowledge():
+        raise HTTPException(status_code=404, detail="topic not found")
+    delete_knowledge(topic)
+    _publish_knowledge_change()
+    logger.info("event=admin_knowledge_deleted topic=%s", topic)
+    return {"topic": topic, "deleted": True}
+
+
+@app.post("/admin/api/policies")
+async def admin_api_policies_save(request: Request):
+    """Replace the policies blob (payment terms, cancellation tiers, certification, company)."""
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.content_store import set_policies
+
+    payload = await request.json()
+    data = payload.get("policies")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=400, detail=f"policies must be valid JSON: {error}"
+            ) from error
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="policies must be a JSON object")
+
+    set_policies(data)
+    _publish_knowledge_change()
+    logger.info("event=admin_policies_saved sections=%d", len(data))
+    return {"saved": True, "sections": sorted(data)}
 
 
 @app.get("/stats")

@@ -1035,13 +1035,78 @@ async function loadDocs(){
 loadList().catch(e=>{});"""
 
 _ADMIN_KNOWLEDGE_BODY = """<h1>Company knowledge</h1>
-<div class="note">Read-only for now. Editing arrives in a later update.</div>
-<h2>Topics</h2><div id="topics" class="muted">Loading…</div>
-<h2>Policies</h2><pre id="policies" class="muted">Loading…</pre>"""
+<div id="banner"></div>
+<div class="note">Permanent information the bot uses for every course — who the company is,
+payment terms, cancellation rules. Changes take effect on the next message.</div>
+<div class="row"><button class="btn" onclick="openTopic(null)">+ Add topic</button>
+<span class="muted" id="count"></span></div>
+<table><thead><tr><th>Topic</th><th>Preview</th></tr></thead>
+<tbody id="rows"><tr><td colspan=2 class="muted">Loading…</td></tr></tbody></table>
+<h2>Policies</h2>
+<div class="note">Structured rules (payment, cancellation tiers, certification, company details).
+Edit as JSON — it is validated before saving.</div>
+<textarea id="pol" rows="16">Loading…</textarea>
+<div class="btns"><button class="btn" id="savePol">Save policies</button></div>
+<div class="drawer" id="drawer">
+<div class="dh"><strong id="dName">Topic</strong><button class="x" onclick="closeDrawer()">×</button></div>
+<div class="db" id="dBody"></div></div>"""
 
-_ADMIN_KNOWLEDGE_SCRIPT = """(async()=>{
+_ADMIN_KNOWLEDGE_SCRIPT = """
+let EDITABLE=true, CUR=null;
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');CUR=null;}
+
+async function load(){
  const d=await api('/admin/api/knowledge');
- document.getElementById('topics').innerHTML=(d.topics||[]).map(t=>
-  `<h2>${esc(t.topic)}</h2><pre>${esc(t.body)}</pre>`).join('')||'<div class="muted">No topics.</div>';
- document.getElementById('policies').textContent=JSON.stringify(d.policies||{},null,2);
-})().catch(e=>{});"""
+ EDITABLE=d.editable!==false;
+ document.getElementById('banner').innerHTML=EDITABLE?'':
+  `<div class="warn">Editing is disabled: the bot is reading its content from files.
+   Set <b>CONTENT_SOURCE=db</b> to turn on editing.</div>`;
+ const topics=d.topics||[];
+ document.getElementById('count').textContent=topics.length+' topic(s)';
+ document.getElementById('rows').innerHTML=topics.map(t=>
+  `<tr onclick="openTopic('${esc(t.topic)}')"><td>${esc(t.topic)}</td>
+   <td class="muted">${esc((t.body||'').replace(/\\s+/g,' ').slice(0,90))}…</td></tr>`
+ ).join('')||'<tr><td colspan=2 class="muted">No topics yet.</td></tr>';
+ document.getElementById('pol').value=JSON.stringify(d.policies||{},null,2);
+ document.getElementById('savePol').disabled=!EDITABLE;
+ window._topics=topics;
+}
+
+function openTopic(name){
+ const t=name?(window._topics||[]).find(x=>x.topic===name):{topic:'',body:''};
+ CUR=t||{topic:'',body:''};
+ document.getElementById('dName').textContent=name||'New topic';
+ const dis=EDITABLE?'':'disabled';
+ document.getElementById('dBody').innerHTML=`
+  <label class="f">Topic name (letters, numbers and underscores)
+   <input id="k_topic" value="${esc(CUR.topic)}" ${name?'readonly':''} ${dis}></label>
+  <label class="f">Content (Markdown)
+   <textarea id="k_body" rows="18" ${dis}>${esc(CUR.body||'')}</textarea></label>
+  <div class="btns"><button class="btn" id="k_save" ${dis}>Save</button>
+   ${name?`<button class="btn danger" id="k_del" ${dis}>Delete</button>`:''}</div>`;
+ document.getElementById('k_save').onclick=saveTopic;
+ const del=document.getElementById('k_del'); if(del)del.onclick=deleteTopic;
+ document.getElementById('drawer').classList.add('open');
+}
+
+async function saveTopic(){
+ try{
+  await send('/admin/api/knowledge','POST',{topic:document.getElementById('k_topic').value,
+   body:document.getElementById('k_body').value});
+  toast('Topic saved — the bot is using it now.');closeDrawer();await load();
+ }catch(e){toast(e.message,true);}
+}
+async function deleteTopic(){
+ if(!confirm('Delete "'+CUR.topic+'"? The bot will no longer use it.'))return;
+ try{await send('/admin/api/knowledge/'+encodeURIComponent(CUR.topic),'DELETE');
+  toast('Topic deleted.');closeDrawer();await load();}
+ catch(e){toast(e.message,true);}
+}
+document.getElementById('savePol').onclick=async()=>{
+ let parsed;
+ try{parsed=JSON.parse(document.getElementById('pol').value);}
+ catch(e){toast('That is not valid JSON: '+e.message,true);return;}
+ try{await send('/admin/api/policies','POST',{policies:parsed});toast('Policies saved.');}
+ catch(e){toast(e.message,true);}
+};
+load().catch(e=>{});"""
