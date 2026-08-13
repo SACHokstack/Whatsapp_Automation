@@ -388,9 +388,7 @@ def _schedule_metadata(pages: list[tuple[int, str]]) -> dict[str, object]:
         "",
     )
     declared_hours = _hours_in(duration_line)
-    declared_days_match = re.search(
-        r"\b(\d+(?:\.\d+)?)\s*days?\b", duration_line, re.IGNORECASE
-    )
+    declared_days_match = re.search(r"\b(\d+(?:\.\d+)?)\s*days?\b", duration_line, re.IGNORECASE)
     declared_days = _number(declared_days_match.group(1)) if declared_days_match else None
 
     current_day: tuple[int, int] | None = None
@@ -462,12 +460,16 @@ def _heading_metadata(line: str) -> tuple[str, str, dict[str, object]] | None:
     day_range = day_range_from_heading(clean)
     if day_range:
         section_type = "outcomes" if "outcome" in clean.casefold() else "agenda"
-        return clean, "", {
-            "section_type": section_type,
-            "day_start": day_range[0],
-            "day_end": day_range[1],
-            "section_heading": clean,
-        }
+        return (
+            clean,
+            "",
+            {
+                "section_type": section_type,
+                "day_start": day_range[0],
+                "day_end": day_range[1],
+                "section_heading": clean,
+            },
+        )
     session = _PDF_SESSION_RE.match(clean)
     if session:
         start = int(session.group(1))
@@ -485,20 +487,28 @@ def _heading_metadata(line: str) -> tuple[str, str, dict[str, object]] | None:
     module = _PDF_MODULE_RE.match(clean)
     if module:
         start = int(module.group(1))
-        return clean, "", {
-            "section_type": "agenda",
-            "module_start": start,
-            "module_end": int(module.group(2) or start),
-            "module_title": module.group(3).strip(),
-            "section_heading": clean,
-        }
+        return (
+            clean,
+            "",
+            {
+                "section_type": "agenda",
+                "module_start": start,
+                "module_end": int(module.group(2) or start),
+                "module_title": module.group(3).strip(),
+                "section_heading": clean,
+            },
+        )
     label = _PDF_LABEL_RE.match(line)
     if label:
         heading = label.group(1).strip()
-        return heading, (label.group(2) or "").strip(), {
-            "section_type": _PDF_LABEL_TYPES[heading.casefold()],
-            "section_heading": heading,
-        }
+        return (
+            heading,
+            (label.group(2) or "").strip(),
+            {
+                "section_type": _PDF_LABEL_TYPES[heading.casefold()],
+                "section_heading": heading,
+            },
+        )
     return None
 
 
@@ -597,9 +607,7 @@ def build_pdf_documents() -> list[CorpusDocument]:
             if intake_facts.get("venue"):
                 intake_metadata["active_intake_venue"] = intake_facts["venue"]
 
-        sections, schedule_metadata = _structured_pdf_sections(
-            pages, default_title=path.stem[:100]
-        )
+        sections, schedule_metadata = _structured_pdf_sections(pages, default_title=path.stem[:100])
         for section_index, section in enumerate(sections, start=1):
             page_anchor = (
                 f"page={section.page_start}"

@@ -64,7 +64,7 @@ class CoursePickerFollowUp(unittest.TestCase):
 
 class QualificationToleratesOutOfOrderAnswers(unittest.TestCase):
     def test_funding_volunteered_during_the_tools_question_is_recorded(self):
-        """"My company will pay for it" was answered with payment terms and recorded
+        """ "My company will pay for it" was answered with payment terms and recorded
         nothing, stalling the flow on ASKING_TECHNOLOGIES forever."""
         lead = {"status": "ENGAGED", "conversation_state": "ASKING_TECHNOLOGIES"}
         reply, updates = main._process_conversation(
@@ -84,9 +84,7 @@ class QualificationToleratesOutOfOrderAnswers(unittest.TestCase):
 
     def test_experience_years_stores_the_number_not_the_sentence(self):
         lead = {"status": "ENGAGED", "conversation_state": "ASKING_EXPERIENCE_YEARS"}
-        _, updates = main._process_conversation(
-            "I am a QA engineer with 3 years experience", lead
-        )
+        _, updates = main._process_conversation("I am a QA engineer with 3 years experience", lead)
         self.assertEqual("3", updates["experience_years"])
         # the descriptive background is kept rather than discarded
         self.assertIn("QA engineer", updates["experience"])
@@ -130,15 +128,11 @@ class PickerIsInterruptible(unittest.TestCase):
         self.assertEqual("ASKING_COURSE_SELECT:SCHEDULE", updates["conversation_state"])
 
     def test_a_mistyped_course_name_still_gets_re_asked(self):
-        reply, updates = main._process_conversation(
-            "the blue one", self._pending(), plan=None
-        )
+        reply, updates = main._process_conversation("the blue one", self._pending(), plan=None)
         self.assertIn("didn't catch", reply)
         self.assertIsNone(updates)
 
     def test_a_valid_selection_is_unaffected(self):
-        reply, updates = main._process_conversation(
-            "software testing", self._pending(), plan=None
-        )
+        reply, updates = main._process_conversation("software testing", self._pending(), plan=None)
         self.assertEqual("sw-testing-aug-2026", updates["course"])
         self.assertIn("RM", reply)

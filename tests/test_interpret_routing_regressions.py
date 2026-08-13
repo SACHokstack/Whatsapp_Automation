@@ -18,7 +18,7 @@ def _intents(message, slug=YOCTO):
 
 
 class FactAboutANamedCourseIsNotTheCatalogue(unittest.TestCase):
-    """"what is the fee for the yocto course" returned the whole course list.
+    """ "what is the fee for the yocto course" returned the whole course list.
 
     The catalogue rule matched the literal phrase "yocto course" (its course-noun pattern
     includes the singular), and being a deterministic rule it short-circuited before the
@@ -46,7 +46,7 @@ class FactAboutANamedCourseIsNotTheCatalogue(unittest.TestCase):
 
 
 class VenueFactsDoNotAnswerFacilityQuestions(unittest.TestCase):
-    """"is there parking" was answered with the venue address.
+    """ "is there parking" was answered with the venue address.
 
     Parking, food, wifi and similar are not the venue fact. The deterministic layer must
     not claim them; they belong to the interpreter, which routes them to OPERATIONS so an

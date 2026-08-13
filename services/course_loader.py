@@ -244,10 +244,30 @@ def detect_explicit_course(message: str) -> CourseConfig | None:
 # to list that word, silently answering about the wrong course.
 _GENERIC_KEYWORDS = frozenset(
     {
-        "course content", "curriculum", "syllabus", "outline", "course outline",
-        "who should attend", "topics", "course structure", "structure", "agenda",
-        "breakdown", "content", "fees", "fee", "price", "cost", "schedule", "dates",
-        "duration", "certification", "certificate", "hrdc", "venue", "location",
+        "course content",
+        "curriculum",
+        "syllabus",
+        "outline",
+        "course outline",
+        "who should attend",
+        "topics",
+        "course structure",
+        "structure",
+        "agenda",
+        "breakdown",
+        "content",
+        "fees",
+        "fee",
+        "price",
+        "cost",
+        "schedule",
+        "dates",
+        "duration",
+        "certification",
+        "certificate",
+        "hrdc",
+        "venue",
+        "location",
     }
 )
 
@@ -266,9 +286,7 @@ def detect_course(message: str) -> CourseConfig | None:
     msg_lower = message.lower()
     scored: list[tuple[int, CourseConfig]] = []
     for course in active:
-        score = sum(
-            1 for kw in course.keywords if kw not in _GENERIC_KEYWORDS and kw in msg_lower
-        )
+        score = sum(1 for kw in course.keywords if kw not in _GENERIC_KEYWORDS and kw in msg_lower)
         if score:
             scored.append((score, course))
 

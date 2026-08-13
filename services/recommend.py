@@ -165,7 +165,9 @@ def _llm_recommendation(message: str, courses):
             raw = _openrouter_json(api_key, model, _SYSTEM_PROMPT, user_prompt)
         payload = _extract_json(raw)
     except Exception as error:  # noqa: BLE001 — never fail the reply path on the model
-        logger.warning("event=recommend_failed provider=%s error=%s", provider, type(error).__name__)
+        logger.warning(
+            "event=recommend_failed provider=%s error=%s", provider, type(error).__name__
+        )
         return None
 
     known = {item.slug for item in courses}

@@ -79,7 +79,14 @@ _PHRASE_EXPANSIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (
         "curriculum",
-        ("course content", "covered topics", "modules", "learning outcomes", "practical labs", "key topics"),
+        (
+            "course content",
+            "covered topics",
+            "modules",
+            "learning outcomes",
+            "practical labs",
+            "key topics",
+        ),
     ),
     ("software testing", ("sw testing", "QA", "Playwright", "automation testing")),
     ("sw testing", ("software testing", "QA", "Playwright", "automation testing")),
@@ -145,7 +152,13 @@ def expand_query(query: str) -> tuple[str, tuple[str, ...]]:
         additions.extend((f"day {day}", "course structure", "agenda", "covered topics"))
     if session is not None:
         additions.extend(
-            (f"session {session}", "course outline", "agenda", "covered topics", "practical exercise")
+            (
+                f"session {session}",
+                "course outline",
+                "agenda",
+                "covered topics",
+                "practical exercise",
+            )
         )
     if day is None and re.search(r"\bday[ -]by[ -]day\b|\bdaily breakdown\b", lower):
         additions.extend(

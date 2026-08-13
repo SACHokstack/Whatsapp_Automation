@@ -172,10 +172,12 @@ class ConversationTests(unittest.TestCase):
         self.assertIsNone(updates)
 
     def test_quotation_answer_mentions_consultant_handoff(self):
-        from services.structured_facts import exact_answer
         from services.course_loader import get_course
+        from services.structured_facts import exact_answer
 
-        answer = exact_answer("QUOTATION", get_course("embedded-c-july-2026"), message="can i get a quotation")
+        answer = exact_answer(
+            "QUOTATION", get_course("embedded-c-july-2026"), message="can i get a quotation"
+        )
         self.assertIn("quotation", answer.lower())
         self.assertIn("consultant", answer.lower())
         # Contact details so the customer can reach out first if they prefer.
@@ -184,15 +186,18 @@ class ConversationTests(unittest.TestCase):
         self.assertIn(company["email"], answer)
 
     def test_handoff_notify_is_skipped_without_support_phone(self):
-        with patch.dict(
-            os.environ,
-            {
-                "HANDOFF_NOTIFY_PHONE": "",
-                "SUPPORT_NOTIFY_PHONE": "",
-                "CONSULTANT_NOTIFY_PHONE": "",
-            },
-            clear=False,
-        ), patch.object(main, "send_text") as mock_send:
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "HANDOFF_NOTIFY_PHONE": "",
+                    "SUPPORT_NOTIFY_PHONE": "",
+                    "CONSULTANT_NOTIFY_PHONE": "",
+                },
+                clear=False,
+            ),
+            patch.object(main, "send_text") as mock_send,
+        ):
             result = main._notify_handoff_owner(
                 "60111111111",
                 {"name": "Test", "course": "embedded-linux-yocto-aug-2026"},
@@ -208,9 +213,10 @@ class ConversationTests(unittest.TestCase):
             status_code = 200
             ok = True
 
-        with patch.dict(os.environ, {"HANDOFF_NOTIFY_PHONE": "+60 12-345 6789"}, clear=False), patch.object(
-            main, "send_template", return_value=Response()
-        ) as mock_send:
+        with (
+            patch.dict(os.environ, {"HANDOFF_NOTIFY_PHONE": "+60 12-345 6789"}, clear=False),
+            patch.object(main, "send_template", return_value=Response()) as mock_send,
+        ):
             result = main._notify_handoff_owner(
                 "60111111111",
                 {
@@ -338,7 +344,9 @@ class ConversationTests(unittest.TestCase):
         self.assertNotIn("Ibis PJCC", hrdc_reply)
 
     def test_topic_repair_signal_routed_to_deterministic_handler(self):
-        plan = deterministic_plan("I didn't ask about cancellation?", current_slug="embedded-linux-yocto-aug-2026")
+        plan = deterministic_plan(
+            "I didn't ask about cancellation?", current_slug="embedded-linux-yocto-aug-2026"
+        )
         self.assertIsNotNone(plan)
         self.assertEqual("CONTEXT_REPAIR", plan.requests[0].intent)
 
@@ -585,9 +593,7 @@ class ConversationTests(unittest.TestCase):
         self.assertNotIn("approval deadline", answer)
 
     def test_conversation_repair_and_health_check_are_deterministic(self):
-        repair, _ = main._process_conversation(
-            "no it did not ask that", {"status": "ENGAGED"}
-        )
+        repair, _ = main._process_conversation("no it did not ask that", {"status": "ENGAGED"})
         working, _ = main._process_conversation("are u working", {"status": "ENGAGED"})
         unclear, _ = main._process_conversation("what", {"status": "ENGAGED"})
         self.assertIn("misunderstood", repair)

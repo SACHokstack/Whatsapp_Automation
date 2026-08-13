@@ -275,10 +275,7 @@ class HybridRetriever:
         fused.sort(
             key=lambda result: (
                 -result.metadata_score
-                if day is not None
-                or session is not None
-                or agenda_query
-                or broad_content_query
+                if day is not None or session is not None or agenda_query or broad_content_query
                 else 0.0,
                 -result.score,
                 result.chunk.chunk_id,
@@ -311,9 +308,7 @@ class HybridRetriever:
         # drops sessions. When the whole structure is asked for (not one specific day or
         # session) on a scoped course, force in EVERY session/day/module chunk that cleared
         # the score threshold, in order, so no session is ever missing.
-        whole_structure = (
-            (broad_content_query or agenda_query) and session is None and day is None
-        )
+        whole_structure = (broad_content_query or agenda_query) and session is None and day is None
         if whole_structure and active_filters.course_id:
             selected_ids = {result.chunk.chunk_id for result in selected}
 

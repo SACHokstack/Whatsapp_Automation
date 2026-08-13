@@ -71,6 +71,7 @@ def is_topic_repair(message: str) -> bool:
 
 CONTEXT_REPAIR_SIGNALS: tuple[str, ...] = TOPIC_REPAIR_SIGNALS
 
+
 def is_context_repair(message: str) -> bool:
     """Return True if the message signals context repair or confusion recovery."""
     return is_topic_repair(message)

@@ -144,9 +144,7 @@ class RealPersonaRegressionTests(unittest.TestCase):
         self.assertIn("can't deliver the full training", response)
         self.assertNotIn("trainer profile", response.lower())
 
-        unrelated = deterministic_plan(
-            "do you sell laptops", current_slug="embedded-c-july-2026"
-        )
+        unrelated = deterministic_plan("do you sell laptops", current_slug="embedded-c-july-2026")
         self.assertTrue(
             unrelated is None or all(request.intent != "TRAINER" for request in unrelated.requests)
         )

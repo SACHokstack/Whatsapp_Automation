@@ -103,7 +103,9 @@ class TestUnderstand(unittest.TestCase):
     def test_session_count_is_course_content_not_duration(self):
         # "how many sessions" must retrieve the session breakdown, not fall back to the LLM
         # and get labelled DURATION ("2-day course"). "how many days" stays DURATION.
-        plan = deterministic_plan("how many sessions are there", current_slug="embedded-c-july-2026")
+        plan = deterministic_plan(
+            "how many sessions are there", current_slug="embedded-c-july-2026"
+        )
         self.assertIsNotNone(plan)
         self.assertEqual("COURSE_CONTENT", plan.requests[0].intent)
         self.assertEqual("retrieve", plan.requests[0].mode)
@@ -115,15 +117,22 @@ class TestUnderstand(unittest.TestCase):
         # "what will I learn" is about the course -> COURSE_CONTENT. But "I want to learn
         # <off-catalogue topic>" is a goal; it must NOT be force-fit to the current course's
         # content (which dumped the wrong syllabus) — leave it to the interpreter to route.
-        content = deterministic_plan("what will i learn", current_slug="embedded-linux-internals-aug-2026")
+        content = deterministic_plan(
+            "what will i learn", current_slug="embedded-linux-internals-aug-2026"
+        )
         self.assertEqual("COURSE_CONTENT", content.requests[0].intent)
         goal = deterministic_plan(
-            "i want to learn mobile app development", current_slug="embedded-linux-internals-aug-2026"
+            "i want to learn mobile app development",
+            current_slug="embedded-linux-internals-aug-2026",
         )
         self.assertIsNone(goal)
 
     def test_price_superlatives_route_to_recommendation(self):
-        for q in ("which is the cheapest", "which is the most expensive", "whats the priciest course"):
+        for q in (
+            "which is the cheapest",
+            "which is the most expensive",
+            "whats the priciest course",
+        ):
             plan = deterministic_plan(q, current_slug=None)
             self.assertIsNotNone(plan, q)
             self.assertEqual(["RECOMMENDATION"], [r.intent for r in plan.requests], q)
@@ -134,7 +143,9 @@ class TestUnderstand(unittest.TestCase):
         self.assertEqual(["RECOMMENDATION"], [r.intent for r in plan.requests])
         # A single-topic or course-specific statement must NOT be hijacked by the rule.
         self.assertIsNone(deterministic_plan("i know selenium", current_slug=None))
-        catalog_plan = deterministic_plan("i know python, do you have a python course", current_slug=None)
+        catalog_plan = deterministic_plan(
+            "i know python, do you have a python course", current_slug=None
+        )
         self.assertNotIn("RECOMMENDATION", [r.intent for r in catalog_plan.requests])
 
     def test_beginner_fit_question_does_not_also_dump_catalog(self):
@@ -304,7 +315,9 @@ class TestUnderstand(unittest.TestCase):
             {
                 "control": "none",
                 "answers_pending_slot": False,
-                "requests": [{"intent": "COURSE_CONTENT", "course_slug": other, "mode": "retrieve"}],
+                "requests": [
+                    {"intent": "COURSE_CONTENT", "course_slug": other, "mode": "retrieve"}
+                ],
                 "confidence": 0.8,
                 "reason": "syllabus",
             },
@@ -319,7 +332,9 @@ class TestUnderstand(unittest.TestCase):
         courses = get_active_courses()
         yocto = next((c for c in courses if "yocto" in c.name.lower()), None)
         self.assertIsNotNone(yocto)
-        self.assertTrue(_message_references_slug("can i see the yocto outline", yocto.slug, courses))
+        self.assertTrue(
+            _message_references_slug("can i see the yocto outline", yocto.slug, courses)
+        )
         self.assertTrue(_message_references_slug(f"about {yocto.slug}", yocto.slug, courses))
         self.assertFalse(_message_references_slug("what is the syllabus", yocto.slug, courses))
 

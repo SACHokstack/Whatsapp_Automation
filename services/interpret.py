@@ -283,9 +283,11 @@ def deterministic_plan(
         normalized,
     ):
         return TurnPlan(
-            control, False,
+            control,
+            False,
             (Request("COMPANY", None, "exact", "Timmins office location and contact details"),),
-            0.99, "rule:company-location",
+            0.99,
+            "rule:company-location",
         )
     if re.search(
         r"\b(?:are you|is timmins|is your company)\s+(?:hrdc|hrd corp)\b|\bhrdc[- ]registered\b|"
@@ -293,9 +295,11 @@ def deterministic_plan(
         normalized,
     ):
         return TurnPlan(
-            control, False,
+            control,
+            False,
             (Request("COMPANY", None, "retrieve", "Timmins HRDC registration and credentials"),),
-            0.99, "rule:company-hrdc",
+            0.99,
+            "rule:company-hrdc",
         )
 
     # Recommendation / "which is best|cheapest|for me" — never a single-course fact.
@@ -309,9 +313,11 @@ def deterministic_plan(
         normalized,
     ):
         return TurnPlan(
-            control, False,
+            control,
+            False,
             (Request("RECOMMENDATION", None, "exact", normalized),),
-            0.99, "rule:recommendation",
+            0.99,
+            "rule:recommendation",
         )
 
     # "i know c, cpp and selenium" — a background spanning MORE THAN ONE domain has no single
@@ -333,15 +339,15 @@ def deterministic_plan(
         normalized,
     ):
         domains = {
-            domain
-            for domain, pattern in _SKILL_DOMAINS.items()
-            if re.search(pattern, normalized)
+            domain for domain, pattern in _SKILL_DOMAINS.items() if re.search(pattern, normalized)
         }
         if len(domains) >= 2:
             return TurnPlan(
-                control, False,
+                control,
+                False,
                 (Request("RECOMMENDATION", None, "exact", normalized),),
-                0.99, "rule:mixed-background",
+                0.99,
+                "rule:mixed-background",
             )
 
     # Interest in a topic/category with no specific course selected → show the catalog
@@ -355,15 +361,25 @@ def deterministic_plan(
     ):
         if slug is not None:
             return TurnPlan(
-                control, False,
-                (Request("COURSE_CONTENT", slug, "retrieve",
-                         "course overview, who it is for, and what it covers"),),
-                0.99, "rule:course-interest",
+                control,
+                False,
+                (
+                    Request(
+                        "COURSE_CONTENT",
+                        slug,
+                        "retrieve",
+                        "course overview, who it is for, and what it covers",
+                    ),
+                ),
+                0.99,
+                "rule:course-interest",
             )
         return TurnPlan(
-            control, False,
+            control,
+            False,
             (Request("CATALOG", None, "exact", "active course catalog"),),
-            0.99, "rule:category-interest",
+            0.99,
+            "rule:category-interest",
         )
 
     contradiction_question = bool(
@@ -519,7 +535,9 @@ def deterministic_plan(
         )
     )
     if value_question:
-        requests.append(Request("COURSE_VALUE", slug, "exact", "course value and practical outcomes"))
+        requests.append(
+            Request("COURSE_VALUE", slug, "exact", "course value and practical outcomes")
+        )
 
     comparison_question = bool(
         re.search(
@@ -612,7 +630,9 @@ def deterministic_plan(
     )
     trainer_catalog_scope = catalog or bool(
         trainer_question
-        and re.search(r"\b(?:other|another)\s+(?:one|option|training|programme|program)\b", normalized)
+        and re.search(
+            r"\b(?:other|another)\s+(?:one|option|training|programme|program)\b", normalized
+        )
     )
     trainer_catalog = trainer_catalog_scope and trainer_question
     if trainer_catalog:
@@ -636,7 +656,11 @@ def deterministic_plan(
         requests.append(Request("COURSE_CONTENT", slug, "retrieve", query))
 
     exact_patterns: tuple[tuple[str, str, str], ...] = (
-        ("FEES", r"\b(?:fee|fees|price|pricing|cost|how much|investment)\b|(?<!feel )\bfree\b", "course fee"),
+        (
+            "FEES",
+            r"\b(?:fee|fees|price|pricing|cost|how much|investment)\b|(?<!feel )\bfree\b",
+            "course fee",
+        ),
         ("SCHEDULE", r"\b(?:schedule|dates?|when|next batch)\b", "course schedule and dates"),
         (
             "VENUE",
@@ -692,10 +716,14 @@ def deterministic_plan(
             continue
         if intent == "BATCH_SIZE" and participant_replacement:
             continue
-        if intent == "SCHEDULE" and operations_question and not re.search(
-            r"\b(?:course schedule|course dates?|next batch)\b|"
-            r"\bwhen\s+(?:is|does|will)\s+(?:(?:the|this)\s+)?course\b",
-            normalized,
+        if (
+            intent == "SCHEDULE"
+            and operations_question
+            and not re.search(
+                r"\b(?:course schedule|course dates?|next batch)\b|"
+                r"\bwhen\s+(?:is|does|will)\s+(?:(?:the|this)\s+)?course\b",
+                normalized,
+            )
         ):
             continue
         if re.search(pattern, normalized) and not any(item.intent == intent for item in requests):

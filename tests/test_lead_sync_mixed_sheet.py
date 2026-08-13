@@ -12,9 +12,25 @@ from services.persistence import get_lead
 
 # Exactly the header set of the Meta export
 COLUMNS = [
-    "id", "created_time", "ad_id", "ad_name", "adset_id", "adset_name", "campaign_id",
-    "campaign_name", "form_id", "form_name", "is_organic", "platform", "who_will_pay?",
-    "full_name", "whatsapp_number", "email", "job_title", "company_name", "lead_status",
+    "id",
+    "created_time",
+    "ad_id",
+    "ad_name",
+    "adset_id",
+    "adset_name",
+    "campaign_id",
+    "campaign_name",
+    "form_id",
+    "form_name",
+    "is_organic",
+    "platform",
+    "who_will_pay?",
+    "full_name",
+    "whatsapp_number",
+    "email",
+    "job_title",
+    "company_name",
+    "lead_status",
 ]
 
 

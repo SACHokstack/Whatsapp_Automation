@@ -28,13 +28,22 @@ class PostgresVectorStoreTests(unittest.TestCase):
 
     def _chunk(self, cid, course, topic="course_facts"):
         return Chunk(
-            chunk_id=cid, document_id="d-" + cid, title="T", text=f"text {cid}",
-            source_ref="s", ordinal=0, course_id=course, topic=topic, metadata={"k": cid},
+            chunk_id=cid,
+            document_id="d-" + cid,
+            title="T",
+            text=f"text {cid}",
+            source_ref="s",
+            ordinal=0,
+            course_id=course,
+            topic=topic,
+            metadata={"k": cid},
         )
 
     def test_sync_roundtrip_and_filtering(self):
         chunks = [self._chunk("c1", "alpha"), self._chunk("c2", "beta")]
-        self.store.sync(chunks, {"c1": [1, 0, 0], "c2": [0, 1, 0]}, document_count=2, corpus_version="v1")
+        self.store.sync(
+            chunks, {"c1": [1, 0, 0], "c2": [0, 1, 0]}, document_count=2, corpus_version="v1"
+        )
 
         self.assertEqual(2, self.store.count())
         self.assertEqual({"c1", "c2"}, self.store.chunk_ids())
@@ -50,13 +59,17 @@ class PostgresVectorStoreTests(unittest.TestCase):
     def test_sync_prunes_removed_chunks(self):
         self.store.sync(
             [self._chunk("c1", "alpha"), self._chunk("c2", "alpha")],
-            {"c1": [1, 0, 0], "c2": [0, 1, 0]}, document_count=1, corpus_version="v1",
+            {"c1": [1, 0, 0], "c2": [0, 1, 0]},
+            document_count=1,
+            corpus_version="v1",
         )
         self.assertEqual({"c1", "c2"}, self.store.chunk_ids())
         # c2 gone from the corpus, c1 kept (no new embedding => reuse), c3 added
         self.store.sync(
             [self._chunk("c1", "alpha"), self._chunk("c3", "alpha")],
-            {"c3": [0, 0, 1]}, document_count=1, corpus_version="v2",
+            {"c3": [0, 0, 1]},
+            document_count=1,
+            corpus_version="v2",
         )
         self.assertEqual({"c1", "c3"}, self.store.chunk_ids())
 

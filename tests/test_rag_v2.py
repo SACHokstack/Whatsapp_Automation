@@ -232,9 +232,7 @@ class CorpusTests(unittest.TestCase):
                 ),
             )
         ]
-        filtered, metadata = _filter_flyer_intake_rows(
-            pages, active_dates="17–20 August 2026"
-        )
+        filtered, metadata = _filter_flyer_intake_rows(pages, active_dates="17–20 August 2026")
         text = filtered[0][1]
         self.assertNotIn("6-9 July 2026", text)
         self.assertIn("17 - 20 August 2026", text)
@@ -314,10 +312,10 @@ class CorpusTests(unittest.TestCase):
         ]
         sections, schedule = _structured_pdf_sections(pages, default_title="Course")
         sessions = [section for section in sections if "session_start" in section.metadata]
-        self.assertEqual([(1, 1), (1, 1), (2, 2)], [
-            (section.metadata["day_start"], section.metadata["day_end"])
-            for section in sessions
-        ])
+        self.assertEqual(
+            [(1, 1), (1, 1), (2, 2)],
+            [(section.metadata["day_start"], section.metadata["day_end"]) for section in sessions],
+        )
         self.assertEqual("explicit", schedule["day_mapping"])
 
     def test_brs_indexes_only_general_client_qa_sections(self):

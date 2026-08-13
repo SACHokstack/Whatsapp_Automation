@@ -12,6 +12,7 @@ _KNOWLEDGE_DIR = _ROOT / "knowledge"
 def _content_source() -> str:
     return os.getenv("CONTENT_SOURCE", "files").strip().lower()
 
+
 DEFAULT_GENERAL_REPLY = "Thank you for your interest. A consultant will contact you shortly."
 
 KEYWORD_FALLBACKS = [
@@ -167,7 +168,10 @@ def _load_knowledge_base_cached(_version) -> dict[str, str]:
         from services.content_store import get_all_knowledge
 
         # Notes are stripped at import time, so store raw and mirror the file path's stripping.
-        return {topic.lower(): _strip_internal_notes(body) for topic, body in get_all_knowledge().items()}
+        return {
+            topic.lower(): _strip_internal_notes(body)
+            for topic, body in get_all_knowledge().items()
+        }
 
     if not _KNOWLEDGE_DIR.exists():
         return kb

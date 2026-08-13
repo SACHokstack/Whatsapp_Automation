@@ -142,8 +142,6 @@ def _row_fields(cs, slug):
 class AdminAuthTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from fastapi.testclient import TestClient
-
         import main
         from services import content_store as cs
 

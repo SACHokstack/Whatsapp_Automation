@@ -168,9 +168,7 @@ def _plain_heading(line: str) -> tuple[str, str] | None:
     return None
 
 
-def _sections(
-    text: str, default_title: str
-) -> list[tuple[str, str, dict[str, str | int | float]]]:
+def _sections(text: str, default_title: str) -> list[tuple[str, str, dict[str, str | int | float]]]:
     sections: list[tuple[str, str, dict[str, str | int | float]]] = []
     heading = default_title
     body: list[str] = []

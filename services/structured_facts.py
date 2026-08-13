@@ -213,7 +213,9 @@ def _course_value_answer(course, message: str) -> str:
         if overview:
             lines.append(f"• {overview}")
     fees = course.fees or {}
-    if fees.get("standard") and re.search(r"\b(?:worth|expensive|costly|rm\s*\d+)\b", message, re.I):
+    if fees.get("standard") and re.search(
+        r"\b(?:worth|expensive|costly|rm\s*\d+)\b", message, re.I
+    ):
         rate = f"RM{fees['standard']:,} per participant"
         if fees.get("group_3_plus"):
             rate += f", or RM{fees['group_3_plus']:,} each for 3 or more"
@@ -254,7 +256,9 @@ def _course_comparison_answer(course, message: str) -> str:
             lines.append(f"• {left.name}: " + "; ".join(left_prereqs))
         if right_prereqs:
             lines.append(f"• {right.name}: " + "; ".join(right_prereqs))
-    lines.append("Tell me your current background and goal, and I can recommend which one fits better.")
+    lines.append(
+        "Tell me your current background and goal, and I can recommend which one fits better."
+    )
     return "\n".join(lines)
 
 
@@ -361,7 +365,9 @@ def exact_answer(intent: str, course=None, *, message: str = "") -> str | None:
 
     if intent == "COURSE_VALUE":
         if course is None:
-            return "Which course are you evaluating? I'll give you an honest, practical value check."
+            return (
+                "Which course are you evaluating? I'll give you an honest, practical value check."
+            )
         return _course_value_answer(course, message)
 
     if intent == "COURSE_COMPARISON":
@@ -386,7 +392,9 @@ def exact_answer(intent: str, course=None, *, message: str = "") -> str | None:
         if "embedded c" in lower_name:
             distinction = "This is the C course, covering C fundamentals, pointers, and GDB—not an Embedded Linux course."
         elif "linux" in lower_name:
-            distinction = "This is one of the Linux courses, not the Embedded C fundamentals course."
+            distinction = (
+                "This is one of the Linux courses, not the Embedded C fundamentals course."
+            )
         elif "python" in lower_name:
             distinction = "This is the Python automation course."
         elif "testing" in lower_name:
@@ -407,7 +415,9 @@ def exact_answer(intent: str, course=None, *, message: str = "") -> str | None:
             if definition:
                 lines.append(definition)
             if "no previous gdb experience is required" in taught.lower():
-                lines.append("GDB is taught from scratch, and no previous GDB experience is required.")
+                lines.append(
+                    "GDB is taught from scratch, and no previous GDB experience is required."
+                )
             if beginner:
                 lines.append(beginner)
             if re.search(r"\b(?:old|age)\b", lower):
@@ -447,7 +457,9 @@ def exact_answer(intent: str, course=None, *, message: str = "") -> str | None:
             fact = _course_trainer_fact(item)
             if not fact:
                 continue
-            target = detailed if "years" in fact.lower() or "trained teams" in fact.lower() else brief
+            target = (
+                detailed if "years" in fact.lower() or "trained teams" in fact.lower() else brief
+            )
             target.append((item, fact))
 
         if not detailed and not brief:
@@ -563,14 +575,14 @@ def exact_answer(intent: str, course=None, *, message: str = "") -> str | None:
                     "It fits QA/testing professionals who want to move into automation, Playwright, API testing, and CI/CD."
                 )
 
-        if any(term in lower for term in ("embedded", "firmware", "linux", "kernel", "yocto", "c programming")):
+        if any(
+            term in lower
+            for term in ("embedded", "firmware", "linux", "kernel", "yocto", "c programming")
+        ):
             embedded = [
                 item
                 for item in courses
-                if any(
-                    term in item.name.lower()
-                    for term in ("embedded", "linux kernel")
-                )
+                if any(term in item.name.lower() for term in ("embedded", "linux kernel"))
             ][:3]
             if embedded:
                 lines = ["For an embedded/Linux background, these are the strongest matches:"]
@@ -651,7 +663,10 @@ def exact_answer(intent: str, course=None, *, message: str = "") -> str | None:
                 "to use eligible HRD levy funds for approved employee training. Timmins can "
                 "provide the quotation, trainer profile, and course outline needed for the application."
             )
-        if any(term in lower for term in ("how", "apply", "process", "portal", "document", "approval", "grant")):
+        if any(
+            term in lower
+            for term in ("how", "apply", "process", "portal", "document", "approval", "grant")
+        ):
             base = (
                 "For HRDC, your company HR/L&D team submits the grant application through the HRDC portal. "
                 "Timmins can provide the HRDC-registered course outline, trainer profile, official quotation, "
