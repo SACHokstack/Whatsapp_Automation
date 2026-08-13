@@ -807,6 +807,7 @@ nav{width:100%;overflow:auto;flex-wrap:nowrap}nav a{white-space:nowrap}main{padd
 <a href="/admin/leads" data-nav="leads">Leads</a>
 <a href="/admin/courses" data-nav="courses">Courses</a>
 <a href="/admin/knowledge" data-nav="knowledge">Knowledge</a>
+<a href="/admin/controls" data-nav="controls">Controls</a>
 </nav>
 <span class="sp"></span>
 <form method="post" action="/admin/logout"><button type="submit">Sign out</button></form>
@@ -1162,6 +1163,62 @@ document.getElementById('savePol').onclick=async()=>{
  try{parsed=JSON.parse(document.getElementById('pol').value);}
  catch(e){toast('That is not valid JSON: '+e.message,true);return;}
  try{await send('/admin/api/policies','POST',{policies:parsed});toast('Policies saved.');}
+ catch(e){toast(e.message,true);}
+};
+load().catch(e=>{});"""
+
+_ADMIN_CONTROLS_BODY = """<section class="page-head"><div><div class="eyebrow">Bot behaviour</div>
+<h1>Controls</h1><p class="sub">Switches that take effect on the next message — no redeploy needed.</p></div></section>
+<div id="live" class="muted">Loading…</div>
+<div class="btns"><button class="btn" id="saveSettings">Save changes</button></div>
+<h2>Set at deploy time</h2>
+<div class="note">These are read once when the service starts, so changing them needs a redeploy.
+Secrets are shown only as configured or not set.</div>
+<div class="table-wrap"><table><thead><tr><th>Setting</th><th>Value</th></tr></thead>
+<tbody id="fixed"></tbody></table></div>
+<h2>Change password</h2>
+<div class="note">Signing in uses one shared password. Changing it signs nobody out, but the old
+password stops working immediately.</div>
+<label class="f">Current password<input type="password" id="pw_cur"></label>
+<label class="f">New password (at least 10 characters)<input type="password" id="pw_new"></label>
+<div class="btns"><button class="btn ghost" id="savePw">Change password</button></div>"""
+
+_ADMIN_CONTROLS_SCRIPT = """
+let SPECS=[];
+function field(s){
+ const id='s_'+s.key;
+ if(s.type==='bool'){
+  const on=String(s.value).toLowerCase()==='true';
+  return `<label class="f">${esc(s.label)}
+   <select id="${id}"><option value="true"${on?' selected':''}>On</option>
+   <option value="false"${on?'':' selected'}>Off</option></select></label>
+   <div class="muted" style="font-size:.82rem;margin-top:-.2rem">${esc(s.help)}</div>`;
+ }
+ return `<label class="f">${esc(s.label)}
+  <input id="${id}" value="${esc(s.value)}"></label>
+  <div class="muted" style="font-size:.82rem;margin-top:-.2rem">${esc(s.help)}</div>`;
+}
+async function load(){
+ const d=await api('/admin/api/settings');
+ SPECS=d.editable||[];
+ document.getElementById('live').innerHTML=SPECS.map(field).join('');
+ document.getElementById('fixed').innerHTML=(d.restart_required||[]).map(r=>
+  `<tr><td>${esc(r.label)}<div class="muted" style="font-size:.78rem">${esc(r.key)}</div></td>
+   <td>${r.value?esc(r.value):'<span class="muted">not set</span>'}</td></tr>`).join('');
+}
+document.getElementById('saveSettings').onclick=async()=>{
+ const settings={};
+ SPECS.forEach(s=>{const el=document.getElementById('s_'+s.key);if(el)settings[s.key]=el.value;});
+ try{await send('/admin/api/settings','POST',{settings});
+  toast('Saved — the bot uses these from its next message.');await load();}
+ catch(e){toast(e.message,true);}
+};
+document.getElementById('savePw').onclick=async()=>{
+ const cur=document.getElementById('pw_cur').value, nw=document.getElementById('pw_new').value;
+ if(!cur||!nw){toast('Fill in both password fields.',true);return;}
+ try{await send('/admin/api/password','POST',{current:cur,new:nw});
+  document.getElementById('pw_cur').value='';document.getElementById('pw_new').value='';
+  toast('Password changed. Use the new one next time you sign in.');}
  catch(e){toast(e.message,true);}
 };
 load().catch(e=>{});"""

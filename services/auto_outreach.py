@@ -33,14 +33,16 @@ FAILED_STATUS = "OUTREACH_FAILED"
 
 
 def _flag(name: str, default: str = "false") -> bool:
-    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+    """Dashboard value if one is stored, else the environment. See services.settings."""
+    from services.settings import get_bool
+
+    return get_bool(name, default.strip().lower() in {"1", "true", "yes", "on"})
 
 
 def _int_env(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, str(default)).strip() or default)
-    except ValueError:
-        return default
+    from services.settings import get_int
+
+    return get_int(name, default)
 
 
 def enabled() -> bool:

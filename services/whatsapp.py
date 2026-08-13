@@ -20,10 +20,9 @@ def _messages_url() -> str:
 # Simulate human typing: wait this many seconds before sending a reply.
 # Configurable via REPLY_DELAY_SECONDS env var (default 2).
 def _reply_delay() -> float:
-    try:
-        return min(max(float(os.getenv("REPLY_DELAY_SECONDS", "2")), 0.0), 30.0)
-    except ValueError:
-        return 2.0
+    from services.settings import get_float
+
+    return min(max(get_float("REPLY_DELAY_SECONDS", 2.0), 0.0), 30.0)
 
 
 def mark_read(message_id: str) -> None:

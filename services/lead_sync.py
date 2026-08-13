@@ -104,7 +104,9 @@ def contact_cutoff() -> datetime | None:
     them by *date* rather than just seeding the database means a rebuilt or restored
     database still can't message them a second time.
     """
-    raw = os.getenv("LEAD_SYNC_CONTACT_CUTOFF", "").strip()
+    from services.settings import get_setting
+
+    raw = (get_setting("LEAD_SYNC_CONTACT_CUTOFF", "") or "").strip()
     if not raw:
         return None
     try:
@@ -191,7 +193,6 @@ def _grouped_from_excel(file_path: str | Path, courses: dict) -> tuple[dict, lis
 
 def mixed_worksheet_name() -> str:
     """Tab holding the raw Meta export (all courses in one sheet). Empty = per-course tabs."""
-    import os
 
     return os.getenv("LEAD_SYNC_WORKSHEET", "").strip()
 

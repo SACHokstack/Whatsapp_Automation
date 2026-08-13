@@ -199,6 +199,18 @@ def set_setting(key: str, value: str) -> None:
             )
 
 
+def delete_setting(key: str) -> None:
+    """Remove a stored setting so the environment value applies again.
+
+    Distinct from storing an empty string: an empty value is itself meaningful for some
+    settings (a blank contact cutoff means "no cutoff", and must override whatever the
+    environment says), so "unset" needs its own operation.
+    """
+    _ensure_schema()
+    with _get_connection() as conn:
+        _run(conn, "DELETE FROM app_settings WHERE key = ?", (key,))
+
+
 def all_settings() -> dict[str, str]:
     _ensure_schema()
     with _get_connection() as conn:

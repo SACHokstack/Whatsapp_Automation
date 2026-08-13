@@ -71,6 +71,7 @@ from services.persistence import (
 )
 from services.persistence import backend_name as persistence_backend_name
 from services.response_guard import validate_reply
+from services.settings import get_bool
 from services.structured_facts import exact_answer, load_policies
 from services.whatsapp import _reply_delay, mark_read, send_template, send_text
 
@@ -108,6 +109,8 @@ async def _json_unhandled_exception(request: Request, error: Exception):
 
 
 from web.pages import (  # inline page markup, kept out of this file
+    _ADMIN_CONTROLS_BODY,
+    _ADMIN_CONTROLS_SCRIPT,
     _ADMIN_COURSES_BODY,
     _ADMIN_COURSES_SCRIPT,
     _ADMIN_HOME_BODY,
@@ -606,7 +609,7 @@ def _faq_reply(
         )
 
     # Legacy fallback (interpreter disabled/unavailable): original keyword routing.
-    safe_mode = os.getenv("BOT_SAFE_MODE", "true").lower() in {"1", "true", "yes", "on"}
+    safe_mode = get_bool("BOT_SAFE_MODE", True)
     decision = decide_reply(
         msg,
         course=course,
@@ -1923,7 +1926,7 @@ def readiness():
         "database": persistence_backend_name(),
         "leads": summary["total_leads"],
         "queue": events,
-        "safe_mode": os.getenv("BOT_SAFE_MODE", "true").lower() in {"1", "true", "yes", "on"},
+        "safe_mode": get_bool("BOT_SAFE_MODE", True),
         "lead_pipeline": {
             "sync_interval_minutes": _lead_sync_interval_seconds() // 60,
             "auto_outreach": auto_outreach_enabled(),
@@ -2010,6 +2013,14 @@ def admin_courses_page(request: Request):
     require_auth(request)
     return HTMLResponse(
         _admin_page("courses", "Courses", _ADMIN_COURSES_BODY, _ADMIN_COURSES_SCRIPT)
+    )
+
+
+@app.get("/admin/controls", response_class=HTMLResponse)
+def admin_controls_page(request: Request):
+    require_auth(request)
+    return HTMLResponse(
+        _admin_page("controls", "Controls", _ADMIN_CONTROLS_BODY, _ADMIN_CONTROLS_SCRIPT)
     )
 
 
@@ -2440,6 +2451,94 @@ async def admin_api_policies_save(request: Request):
     _publish_knowledge_change()
     logger.info("event=admin_policies_saved sections=%d", len(data))
     return {"saved": True, "sections": sorted(data)}
+
+
+# --- runtime controls (P4) ---
+#
+# Unlike course and knowledge edits these are not content, so they work in either content mode
+# and are stored in app_settings regardless. Secrets are never returned — only whether they
+# are configured.
+
+
+@app.get("/admin/api/settings")
+def admin_api_settings(request: Request):
+    require_auth(request, api=True)
+    from services.settings import (
+        EDITABLE_SETTINGS,
+        RESTART_REQUIRED_SETTINGS,
+        get_setting,
+    )
+
+    editable = [
+        {**spec, "value": get_setting(spec["key"], spec.get("default", "")) or ""}
+        for spec in EDITABLE_SETTINGS
+    ]
+    fixed = []
+    for spec in RESTART_REQUIRED_SETTINGS:
+        raw = os.getenv(spec["key"], "")
+        fixed.append(
+            {
+                "key": spec["key"],
+                "label": spec["label"],
+                "value": ("configured" if raw else "not set") if spec["secret"] else raw,
+                "secret": spec["secret"],
+            }
+        )
+    return {"editable": editable, "restart_required": fixed}
+
+
+@app.post("/admin/api/settings")
+async def admin_api_settings_save(request: Request):
+    """Store runtime settings. Values are validated before they are written, never after."""
+    require_auth(request, api=True)
+    from services.settings import EDITABLE_KEYS, SettingError, set_setting, validate_setting
+
+    payload = await request.json()
+    values = payload.get("settings")
+    if not isinstance(values, dict):
+        raise HTTPException(status_code=400, detail="settings must be an object")
+
+    unknown = sorted(set(values) - EDITABLE_KEYS)
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"not editable here: {', '.join(unknown)}")
+
+    # Validate everything first so a rejected value cannot leave a half-applied set behind.
+    cleaned: dict[str, str] = {}
+    for key, value in values.items():
+        try:
+            cleaned[key] = validate_setting(key, "" if value is None else str(value))
+        except SettingError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    for key, value in cleaned.items():
+        set_setting(key, value)
+    logger.info("event=admin_settings_saved keys=%s", ",".join(sorted(cleaned)))
+    return {"saved": sorted(cleaned)}
+
+
+@app.post("/admin/api/password")
+async def admin_api_password(request: Request):
+    """Change the admin password. The current one is required even though you are signed in."""
+    require_auth(request, api=True)
+    from services.admin_auth import check_password
+    from services.content_store import set_admin_password
+
+    payload = await request.json()
+    current = str(payload.get("current") or "")
+    new = str(payload.get("new") or "")
+
+    if not check_password(current):
+        raise HTTPException(status_code=401, detail="that is not the current password")
+    if len(new) < 10:
+        raise HTTPException(
+            status_code=400, detail="the new password must be at least 10 characters"
+        )
+    if new == current:
+        raise HTTPException(status_code=400, detail="the new password matches the current one")
+
+    set_admin_password(new)
+    logger.info("event=admin_password_changed")
+    return {"changed": True}
 
 
 @app.get("/stats")

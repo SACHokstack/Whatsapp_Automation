@@ -32,10 +32,9 @@ class ExtractionError(RuntimeError):
 
 def ocr_page_cap() -> int:
     """Max pages to OCR in one document. 0 disables OCR entirely."""
-    try:
-        return max(0, int(os.getenv("OCR_PAGE_CAP", "40") or 40))
-    except ValueError:
-        return 40
+    from services.settings import get_int
+
+    return max(0, get_int("OCR_PAGE_CAP", 40))
 
 
 def extract_text(raw: bytes, filename: str, content_type: str = "") -> tuple[str, str]:
