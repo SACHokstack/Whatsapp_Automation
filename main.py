@@ -56,6 +56,7 @@ from services.persistence import (
     get_dashboard_summary,
     get_lead,
     init_db,
+    list_leads,
     upsert_lead,
 )
 from services.persistence import backend_name as persistence_backend_name
@@ -1091,7 +1092,10 @@ def _plan_is_greeting_only(plan) -> bool:
 
 
 _REASSERT_CUES = (
-    ("VENUE", r"\b(?:venue|location|where|held|address|penang|kuala lumpur|\bkl\b|petaling|pjcc|ibis|hotel|centre|center|city)\b"),
+    (
+        "VENUE",
+        r"\b(?:venue|location|where|held|address|penang|kuala lumpur|\bkl\b|petaling|pjcc|ibis|hotel|centre|center|city)\b",
+    ),
     ("FEES", r"\b(?:fee|fees|price|cost|ringgit|rm\s*\d|expensive|how much|free)\b"),
     ("SCHEDULE", r"\b(?:date|dates|when|schedule|start|august|july|month)\b"),
     ("DURATION", r"\b(?:how long|duration|days|hours)\b"),
@@ -1230,9 +1234,7 @@ def _reply_from_plan(
     reply = "\n\n".join(parts)
 
     plan_has_catalog_scope = any(req.intent in CATALOG_INTENTS for req in plan.requests)
-    validation = validate_reply(
-        reply, course=resolved, catalog=catalog or plan_has_catalog_scope
-    )
+    validation = validate_reply(reply, course=resolved, catalog=catalog or plan_has_catalog_scope)
     if not validation.valid:
         logger.error("event=response_rejected reason=%s route=plan", validation.reason)
         return warm_fallback(resolved)
@@ -2000,10 +2002,15 @@ def _notify_handoff_owner(
 
     notify_phone = _handoff_notify_phone()
     if not notify_phone:
-        logger.info("event=handoff_notify_skipped reason=no_notify_phone subject=%s", subject_id(sender))
+        logger.info(
+            "event=handoff_notify_skipped reason=no_notify_phone subject=%s", subject_id(sender)
+        )
         return False
     if notify_phone == re.sub(r"\D", "", sender):
-        logger.warning("event=handoff_notify_skipped reason=notify_phone_is_customer subject=%s", subject_id(sender))
+        logger.warning(
+            "event=handoff_notify_skipped reason=notify_phone_is_customer subject=%s",
+            subject_id(sender),
+        )
         return False
 
     def _lead_value(key: str, default: str = "-") -> str:
@@ -2012,7 +2019,7 @@ def _notify_handoff_owner(
     template_name = os.getenv("HANDOFF_NOTIFY_TEMPLATE", "timmins_handoff_alert")
     customer_name = _lead_value("name", "Unknown")
     course_name = _lead_value("course", "Unknown")
-    last_msg = (message.strip()[:200] or "-")
+    last_msg = message.strip()[:200] or "-"
     named_variables = {
         "customer_name": customer_name,
         "customer_phone": sender,
@@ -2022,7 +2029,9 @@ def _notify_handoff_owner(
     }
 
     try:
-        response = send_template(notify_phone, template_name, language_code="en", named_variables=named_variables)
+        response = send_template(
+            notify_phone, template_name, language_code="en", named_variables=named_variables
+        )
     except requests.RequestException:
         logger.exception(
             "event=handoff_notify_failed reason=request_exception subject=%s notify_subject=%s",
@@ -2124,9 +2133,7 @@ def _process_conversation(
             None,
         )
 
-    if re.fullmatch(
-        r"(?:are|r)\s+(?:you|u)\s+(?:working|online|there)[ .!?]*", msg_lower
-    ):
+    if re.fullmatch(r"(?:are|r)\s+(?:you|u)\s+(?:working|online|there)[ .!?]*", msg_lower):
         return (
             "Yes, I'm working. I can help with Timmins, course content, fees, schedules, "
             "HRDC, and registration.",
@@ -2174,10 +2181,14 @@ def _process_conversation(
         # answer can be delivered once they choose. Never while a qualification slot is open,
         # or "3" would be ambiguous between a course number and years of experience.
         if state not in _ACTIVE_STATES:
-            pending_intent = next(
-                (r.intent for r in plan.requests if r.intent in _COURSE_SCOPED_INTENTS),
-                "UNKNOWN",
-            ) if plan is not None else "UNKNOWN"
+            pending_intent = (
+                next(
+                    (r.intent for r in plan.requests if r.intent in _COURSE_SCOPED_INTENTS),
+                    "UNKNOWN",
+                )
+                if plan is not None
+                else "UNKNOWN"
+            )
             return (
                 _course_picker(pending_intent),
                 {
@@ -2648,6 +2659,316 @@ def admin_logout():
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie(COOKIE_NAME)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Admin dashboard (P1 — read-only). Inline-HTML pages that fetch guarded JSON
+# client-side, mirroring the _WA_SIMULATOR_HTML pattern. Every page and every
+# /admin/api/* endpoint calls require_auth first.
+# ---------------------------------------------------------------------------
+
+_ADMIN_SHELL = """<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timmins Admin · __TITLE__</title><style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;margin:0}
+header{background:#1e293b;border-bottom:1px solid #334155;padding:.7rem 1.2rem;
+display:flex;align-items:center;gap:1.4rem;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+header .brand{font-weight:700;color:#fff}
+nav{display:flex;gap:.3rem;flex-wrap:wrap}
+nav a{color:#94a3b8;text-decoration:none;padding:.35rem .7rem;border-radius:8px;font-size:.9rem}
+nav a:hover{background:#0f172a;color:#e2e8f0}
+nav a.on{background:#2563eb;color:#fff}
+header .sp{flex:1}
+header form{margin:0}
+header button{background:transparent;border:1px solid #334155;color:#94a3b8;padding:.35rem .7rem;
+border-radius:8px;cursor:pointer;font-size:.85rem}
+main{padding:1.3rem;max-width:1100px;margin:0 auto}
+h1{font-size:1.25rem;margin:.2rem 0 1.1rem}
+h2{font-size:1rem;margin:1.4rem 0 .6rem;color:#cbd5e1}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.9rem}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:1rem}
+.card .n{font-size:1.8rem;font-weight:700;color:#fff}
+.card .l{color:#94a3b8;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid #1e293b}
+th{color:#94a3b8;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
+tbody tr:hover{background:#1e293b;cursor:pointer}
+.pill{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.72rem;
+background:#334155;color:#cbd5e1}
+.pill.active{background:#064e3b;color:#6ee7b7}
+.pill.archived{background:#3f2937;color:#fca5a5}
+.muted{color:#64748b}
+select,input{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;
+padding:.4rem .6rem;font-size:.85rem}
+.row{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b1220;border:1px solid #1e293b;
+border-radius:10px;padding:.9rem;font-size:.82rem;line-height:1.5;margin:0}
+.drawer{position:fixed;top:0;right:0;height:100vh;width:min(92vw,460px);background:#0b1220;
+border-left:1px solid #334155;box-shadow:-10px 0 40px rgba(0,0,0,.5);transform:translateX(100%);
+transition:transform .18s;z-index:20;display:flex;flex-direction:column}
+.drawer.open{transform:none}
+.drawer .dh{padding:1rem 1.2rem;border-bottom:1px solid #1e293b;display:flex;
+justify-content:space-between;align-items:center}
+.drawer .db{padding:1rem 1.2rem;overflow-y:auto;flex:1}
+.drawer .x{cursor:pointer;color:#94a3b8;background:transparent;border:0;font-size:1.3rem}
+.msg{margin:.5rem 0;padding:.55rem .7rem;border-radius:10px;max-width:85%;font-size:.85rem;line-height:1.4}
+.msg.inbound{background:#1e293b;margin-right:auto}
+.msg.outbound{background:#1d3a5f;margin-left:auto}
+.msg .d{font-size:.68rem;color:#94a3b8;margin-bottom:.15rem}
+.empty{color:#64748b;padding:2rem;text-align:center}
+.note{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:.7rem .9rem;
+color:#94a3b8;font-size:.82rem;margin-bottom:1rem}
+a.link{color:#60a5fa}
+</style></head><body>
+<header>
+<span class="brand">Timmins Admin</span>
+<nav>
+<a href="/admin" data-nav="home">Overview</a>
+<a href="/admin/leads" data-nav="leads">Leads</a>
+<a href="/admin/courses" data-nav="courses">Courses</a>
+<a href="/admin/knowledge" data-nav="knowledge">Knowledge</a>
+</nav>
+<span class="sp"></span>
+<form method="post" action="/admin/logout"><button type="submit">Sign out</button></form>
+</header>
+<main>__BODY__</main>
+<script>
+document.querySelectorAll('nav a').forEach(a=>{if(a.dataset.nav==="__NAV__")a.classList.add('on');});
+async function api(path){const r=await fetch(path,{credentials:'same-origin'});
+if(r.status===401){location.href='/admin/login';throw new Error('unauth');}
+if(!r.ok)throw new Error('http '+r.status);return r.json();}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+__SCRIPT__
+</script></body></html>"""
+
+
+def _admin_page(nav: str, title: str, body: str, script: str) -> str:
+    return (
+        _ADMIN_SHELL.replace("__TITLE__", title)
+        .replace("__NAV__", nav)
+        .replace("__BODY__", body)
+        .replace("__SCRIPT__", script)
+    )
+
+
+_ADMIN_HOME_BODY = """<h1>Overview</h1>
+<div class="cards" id="cards"><div class="muted">Loading…</div></div>
+<h2>Leads by status</h2>
+<table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody id="st"></tbody></table>"""
+
+_ADMIN_HOME_SCRIPT = """(async()=>{
+const s=await api('/admin/api/summary');
+document.getElementById('cards').innerHTML=[
+ ['Total leads',s.total_leads],['Messages',s.total_messages],
+ ['Courses (active)',s.active_courses+' / '+s.total_courses],
+ ['Knowledge topics',s.knowledge_topics]
+].map(([l,n])=>`<div class="card"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
+document.getElementById('st').innerHTML=(s.leads_by_status||[]).map(r=>
+ `<tr><td><span class="pill">${esc(r.status)}</span></td><td>${esc(r.count)}</td></tr>`).join('')
+ ||'<tr><td colspan=2 class="muted">No leads yet.</td></tr>';
+})().catch(e=>{});"""
+
+_ADMIN_LEADS_BODY = """<h1>Leads</h1>
+<div class="row">
+<select id="status"><option value="">All statuses</option></select>
+<select id="course"><option value="">All courses</option></select>
+<span class="muted" id="count"></span>
+</div>
+<table><thead><tr><th>Name</th><th>Phone</th><th>Course</th><th>Status</th><th>Updated</th></tr></thead>
+<tbody id="rows"><tr><td colspan=5 class="muted">Loading…</td></tr></tbody></table>
+<div class="drawer" id="drawer">
+<div class="dh"><strong id="dName">Lead</strong><button class="x" onclick="closeDrawer()">×</button></div>
+<div class="db" id="dBody"></div></div>"""
+
+_ADMIN_LEADS_SCRIPT = """
+let COURSES=[];
+function fmt(s){if(!s)return '';return String(s).replace('T',' ').slice(0,16);}
+async function load(){
+ const st=document.getElementById('status').value, co=document.getElementById('course').value;
+ const q=new URLSearchParams();if(st)q.set('status',st);if(co)q.set('course',co);
+ const d=await api('/admin/api/leads?'+q.toString());
+ document.getElementById('count').textContent=d.leads.length+' lead(s)';
+ document.getElementById('rows').innerHTML=d.leads.map(l=>
+  `<tr onclick="openLead('${encodeURIComponent(l.phone)}')">
+   <td>${esc(l.name||'—')}</td><td>${esc(l.phone)}</td><td>${esc(l.course||'—')}</td>
+   <td><span class="pill">${esc(l.status||'—')}</span></td><td class="muted">${esc(fmt(l.updated_at))}</td></tr>`
+ ).join('')||'<tr><td colspan=5 class="muted">No leads match.</td></tr>';
+}
+async function openLead(p){
+ const d=await api('/admin/api/leads/'+p);const L=d.lead||{};
+ document.getElementById('dName').textContent=L.name||L.phone||'Lead';
+ const meta=['status','course','score','email','source','created_at']
+  .filter(k=>L[k]).map(k=>`<div class="msg-meta"><span class="muted">${k}:</span> ${esc(L[k])}</div>`).join('');
+ const msgs=(d.history||[]).map(m=>
+  `<div class="msg ${m.direction==='inbound'?'inbound':'outbound'}">
+   <div class="d">${m.direction} · ${esc(fmt(m.created_at))}</div>${esc(m.body)}</div>`).join('')
+  ||'<div class="empty">No messages.</div>';
+ document.getElementById('dBody').innerHTML=`<div class="note">${meta||'No metadata.'}</div>${msgs}`;
+ document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');}
+(async()=>{
+ const m=await api('/admin/api/meta');
+ document.getElementById('status').insertAdjacentHTML('beforeend',
+  m.statuses.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join(''));
+ document.getElementById('course').insertAdjacentHTML('beforeend',
+  m.courses.map(c=>`<option value="${esc(c.slug)}">${esc(c.name)}</option>`).join(''));
+ document.getElementById('status').onchange=load;
+ document.getElementById('course').onchange=load;
+ await load();
+})().catch(e=>{});"""
+
+_ADMIN_COURSES_BODY = """<h1>Courses</h1>
+<div class="note">Read-only for now. Editing, uploads and archiving arrive in the next update.</div>
+<table><thead><tr><th>Course</th><th>Status</th><th>Dates</th><th>Venue</th><th>Keywords</th></tr></thead>
+<tbody id="rows"><tr><td colspan=5 class="muted">Loading…</td></tr></tbody></table>
+<div class="drawer" id="drawer">
+<div class="dh"><strong id="dName">Course</strong><button class="x" onclick="closeDrawer()">×</button></div>
+<div class="db" id="dBody"></div></div>"""
+
+_ADMIN_COURSES_SCRIPT = """
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');}
+async function openCourse(slug){
+ const c=(await api('/admin/api/courses')).courses.find(x=>x.slug===slug);if(!c)return;
+ document.getElementById('dName').textContent=c.name;
+ const fees=Object.entries(c.fees||{}).map(([k,v])=>`${k}: ${v}`).join('  ·  ')||'—';
+ document.getElementById('dBody').innerHTML=
+  `<div class="note">Slug: ${esc(c.slug)}<br>Fees: ${esc(fees)}<br>`+
+  `HRDC deadline: ${esc(c.hrdc_deadline||'—')}<br>Payment deadline: ${esc(c.payment_deadline||'—')}</div>`+
+  `<h2>Overview</h2><pre>${esc(c.overview||'(none)')}</pre>`;
+ document.getElementById('drawer').classList.add('open');
+}
+(async()=>{
+ const d=await api('/admin/api/courses');
+ document.getElementById('rows').innerHTML=d.courses.map(c=>
+  `<tr onclick="openCourse('${esc(c.slug)}')"><td>${esc(c.name)}</td>
+   <td><span class="pill ${c.active?'active':'archived'}">${c.active?'active':'archived'}</span></td>
+   <td class="muted">${esc(c.dates||'—')}</td><td class="muted">${esc(c.venue||'—')}</td>
+   <td class="muted">${esc((c.keywords||[]).slice(0,4).join(', '))}</td></tr>`
+ ).join('')||'<tr><td colspan=5 class="muted">No courses.</td></tr>';
+})().catch(e=>{});"""
+
+_ADMIN_KNOWLEDGE_BODY = """<h1>Company knowledge</h1>
+<div class="note">Read-only for now. Editing arrives in a later update.</div>
+<h2>Topics</h2><div id="topics" class="muted">Loading…</div>
+<h2>Policies</h2><pre id="policies" class="muted">Loading…</pre>"""
+
+_ADMIN_KNOWLEDGE_SCRIPT = """(async()=>{
+ const d=await api('/admin/api/knowledge');
+ document.getElementById('topics').innerHTML=(d.topics||[]).map(t=>
+  `<h2>${esc(t.topic)}</h2><pre>${esc(t.body)}</pre>`).join('')||'<div class="muted">No topics.</div>';
+ document.getElementById('policies').textContent=JSON.stringify(d.policies||{},null,2);
+})().catch(e=>{});"""
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_home(request: Request):
+    require_auth(request)
+    return HTMLResponse(_admin_page("home", "Overview", _ADMIN_HOME_BODY, _ADMIN_HOME_SCRIPT))
+
+
+@app.get("/admin/leads", response_class=HTMLResponse)
+def admin_leads_page(request: Request):
+    require_auth(request)
+    return HTMLResponse(_admin_page("leads", "Leads", _ADMIN_LEADS_BODY, _ADMIN_LEADS_SCRIPT))
+
+
+@app.get("/admin/courses", response_class=HTMLResponse)
+def admin_courses_page(request: Request):
+    require_auth(request)
+    return HTMLResponse(
+        _admin_page("courses", "Courses", _ADMIN_COURSES_BODY, _ADMIN_COURSES_SCRIPT)
+    )
+
+
+@app.get("/admin/knowledge", response_class=HTMLResponse)
+def admin_knowledge_page(request: Request):
+    require_auth(request)
+    return HTMLResponse(
+        _admin_page("knowledge", "Knowledge", _ADMIN_KNOWLEDGE_BODY, _ADMIN_KNOWLEDGE_SCRIPT)
+    )
+
+
+# --- read-only JSON for the pages above ---
+
+
+@app.get("/admin/api/summary")
+def admin_api_summary(request: Request):
+    require_auth(request, api=True)
+    from services.course_loader import load_courses
+    from services.knowledge_base import load_knowledge_base
+
+    summary = get_dashboard_summary()
+    courses = load_courses()
+    summary["total_courses"] = len(courses)
+    summary["active_courses"] = sum(1 for c in courses.values() if c.active)
+    summary["knowledge_topics"] = len(load_knowledge_base())
+    return summary
+
+
+@app.get("/admin/api/meta")
+def admin_api_meta(request: Request):
+    require_auth(request, api=True)
+    from services.course_loader import load_courses
+
+    statuses = sorted(
+        {
+            str(r.get("status") or "").strip()
+            for r in list_leads()
+            if str(r.get("status") or "").strip()
+        }
+    )
+    courses = [{"slug": s, "name": c.name} for s, c in load_courses().items()]
+    return {"statuses": statuses, "courses": courses}
+
+
+@app.get("/admin/api/leads")
+def admin_api_leads(request: Request, status: str = "", course: str = ""):
+    require_auth(request, api=True)
+    statuses = (status.strip(),) if status.strip() else None
+    leads = list_leads(course=course.strip() or None, statuses=statuses)
+    return {"leads": leads}
+
+
+@app.get("/admin/api/leads/{phone}")
+def admin_api_lead_detail(phone: str, request: Request):
+    require_auth(request, api=True)
+    return {"lead": get_lead(phone), "history": get_conversation_history(phone)}
+
+
+@app.get("/admin/api/courses")
+def admin_api_courses(request: Request):
+    require_auth(request, api=True)
+    from services.course_loader import load_courses
+
+    return {
+        "courses": [
+            {
+                "slug": c.slug,
+                "name": c.name,
+                "active": c.active,
+                "dates": c.dates,
+                "venue": c.venue,
+                "fees": c.fees,
+                "hrdc_deadline": c.hrdc_deadline,
+                "payment_deadline": c.payment_deadline,
+                "keywords": c.keywords,
+                "overview": c.overview,
+            }
+            for c in load_courses().values()
+        ]
+    }
+
+
+@app.get("/admin/api/knowledge")
+def admin_api_knowledge(request: Request):
+    require_auth(request, api=True)
+    from services.knowledge_base import load_knowledge_base
+
+    topics = [{"topic": t, "body": b} for t, b in sorted(load_knowledge_base().items())]
+    return {"topics": topics, "policies": load_policies()}
 
 
 @app.get("/stats")
@@ -3130,7 +3451,9 @@ def _handle_webhook_value_unlocked(value: dict) -> None:
                         _notify_handoff_owner(
                             sender,
                             {**lead, **state_updates},
-                            reason=str(state_updates.get("human_reason") or "Requested human agent"),
+                            reason=str(
+                                state_updates.get("human_reason") or "Requested human agent"
+                            ),
                             source="state_update",
                             intent=str(state_updates.get("last_intent") or ""),
                             message=msg,
