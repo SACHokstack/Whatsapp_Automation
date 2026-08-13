@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -11,7 +12,15 @@ from datetime import datetime, timezone
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form, HTTPException, Query, Request
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 load_dotenv()
@@ -30,6 +39,7 @@ from services.course_loader import (
     get_active_courses,
     get_course,
     load_courses,
+    refresh_courses,
 )
 from services.durable_queue import (
     claim_event,
@@ -213,6 +223,9 @@ _queue_shutdown = threading.Event()
 _queue_worker: threading.Thread | None = None
 _lead_sync_shutdown = threading.Event()
 _lead_sync_worker: threading.Thread | None = None
+_ingest_wakeup = threading.Event()
+_ingest_shutdown = threading.Event()
+_ingest_worker: threading.Thread | None = None
 
 
 _AUTO_REPLY_SIGNALS = (
@@ -2058,9 +2071,18 @@ def admin_api_lead_detail(phone: str, request: Request):
 @app.get("/admin/api/courses")
 def admin_api_courses(request: Request):
     require_auth(request, api=True)
+    from services.content_store import list_documents
     from services.course_loader import load_courses
 
+    editable = os.getenv("CONTENT_SOURCE", "files").strip().lower() == "db"
+    doc_counts: dict[str, int] = {}
+    if editable:
+        for row in list_documents():
+            slug = str(row.get("course_slug") or "")
+            doc_counts[slug] = doc_counts.get(slug, 0) + 1
+
     return {
+        "editable": editable,
         "courses": [
             {
                 "slug": c.slug,
@@ -2073,10 +2095,215 @@ def admin_api_courses(request: Request):
                 "payment_deadline": c.payment_deadline,
                 "keywords": c.keywords,
                 "overview": c.overview,
+                "document_count": doc_counts.get(c.slug, 0),
             }
             for c in load_courses().values()
-        ]
+        ],
     }
+
+
+# --- course editing (P2) ---
+#
+# Content edits only reach the bot when it reads content from the database, so a mutation
+# attempted under CONTENT_SOURCE=files is refused outright rather than being written somewhere
+# nothing reads. Silently accepting it would show the admin a course the bot cannot see.
+
+_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+def _require_db_content_source() -> None:
+    if os.getenv("CONTENT_SOURCE", "files").strip().lower() != "db":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The bot is currently reading its content from files, so dashboard edits would "
+                "have no effect. Set CONTENT_SOURCE=db to enable editing."
+            ),
+        )
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower()).strip("-")
+    return slug[:80]
+
+
+def _publish_content_change() -> None:
+    """Make a content write visible to the readers immediately."""
+    from services.content_store import bump_content_version
+
+    bump_content_version()
+    refresh_courses()
+
+
+@app.post("/admin/api/courses")
+async def admin_api_course_save(request: Request):
+    """Create or update a course. The slug is derived from the name on create and is then fixed."""
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.content_store import get_course_row, upsert_course
+
+    payload = await request.json()
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    slug = _slugify(payload.get("slug") or name)
+    if not slug:
+        raise HTTPException(status_code=400, detail="could not derive a slug from that name")
+
+    existing = get_course_row(slug) or {}
+    keywords = payload.get("keywords")
+    if isinstance(keywords, str):
+        keywords = [k.strip().lower() for k in keywords.split(",") if k.strip()]
+    fees = payload.get("fees")
+    if isinstance(fees, str):
+        try:
+            fees = json.loads(fees) if fees.strip() else {}
+        except ValueError as error:
+            raise HTTPException(
+                status_code=400, detail=f"fees must be valid JSON: {error}"
+            ) from error
+
+    upsert_course(
+        slug,
+        {
+            "name": name,
+            "active": bool(payload.get("active", existing.get("active", True))),
+            "dates": payload.get("dates", existing.get("dates")),
+            "venue": payload.get("venue", existing.get("venue")),
+            "fees": fees if fees is not None else existing.get("fees_json"),
+            "hrdc_deadline": payload.get("hrdc_deadline", existing.get("hrdc_deadline")),
+            "payment_deadline": payload.get("payment_deadline", existing.get("payment_deadline")),
+            "hot_budget_threshold": payload.get(
+                "hot_budget_threshold", existing.get("hot_budget_threshold") or 4000
+            ),
+            "keywords": keywords if keywords is not None else existing.get("keywords_json"),
+            "overview": payload.get("overview", existing.get("overview") or ""),
+            "outreach": payload.get("outreach", existing.get("outreach_json")),
+        },
+    )
+    _publish_content_change()
+    logger.info("event=admin_course_saved slug=%s created=%s", slug, not existing)
+    return {"slug": slug, "created": not existing}
+
+
+@app.post("/admin/api/courses/{slug}/active")
+async def admin_api_course_set_active(slug: str, request: Request):
+    """Archive (active=false) or reactivate a course.
+
+    Archiving also prunes the course's chunks so it stops being retrievable straight away;
+    its rows and extracted text survive, so reactivating re-indexes without a re-upload.
+    """
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.content_store import get_course_row, set_course_active
+    from services.course_ingest import prune_course, resync_course
+
+    if not get_course_row(slug):
+        raise HTTPException(status_code=404, detail="course not found")
+    payload = await request.json()
+    active = bool(payload.get("active"))
+    set_course_active(slug, active)
+    _publish_content_change()
+    try:
+        report = resync_course(slug) if active else {"pruned": prune_course(slug)}
+    except Exception:
+        logger.exception("event=admin_course_active_resync_failed slug=%s", slug)
+        report = {"error": "the course was saved but its search index could not be updated"}
+    logger.info("event=admin_course_active slug=%s active=%s", slug, active)
+    return {"slug": slug, "active": active, **report}
+
+
+@app.delete("/admin/api/courses/{slug}")
+def admin_api_course_delete(slug: str, request: Request):
+    """Permanently delete a course: its chunks, then its documents and row."""
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.content_store import delete_course, get_course_row
+    from services.course_ingest import prune_course
+
+    if not get_course_row(slug):
+        raise HTTPException(status_code=404, detail="course not found")
+    try:
+        pruned = prune_course(slug)
+    except Exception:
+        logger.exception("event=admin_course_delete_prune_failed slug=%s", slug)
+        pruned = 0
+    delete_course(slug)
+    _publish_content_change()
+    logger.info("event=admin_course_deleted slug=%s pruned=%d", slug, pruned)
+    return {"slug": slug, "deleted": True, "chunks_pruned": pruned}
+
+
+@app.get("/admin/api/courses/{slug}/documents")
+def admin_api_course_documents(slug: str, request: Request):
+    """Document list with live ingest status — this is what the upload UI polls."""
+    require_auth(request, api=True)
+    from services.content_store import list_documents
+
+    return {"slug": slug, "documents": list_documents(slug)}
+
+
+@app.post("/admin/api/courses/{slug}/documents")
+async def admin_api_course_upload(slug: str, request: Request, file: UploadFile = File(...)):
+    """Accept a file and queue it. Extraction and embedding happen on the ingest worker."""
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.content_store import add_document, get_course_row
+
+    if not get_course_row(slug):
+        raise HTTPException(status_code=404, detail="course not found")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="the uploaded file is empty")
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"file is larger than {_MAX_UPLOAD_BYTES // (1024 * 1024)}MB",
+        )
+    document_id = add_document(slug, file.filename or "upload", file.content_type or "", raw)
+    _ingest_wakeup.set()
+    logger.info(
+        "event=admin_document_uploaded slug=%s id=%d filename=%s bytes=%d",
+        slug,
+        document_id,
+        file.filename,
+        len(raw),
+    )
+    return {"id": document_id, "filename": file.filename, "status": "pending"}
+
+
+@app.delete("/admin/api/documents/{document_id}")
+def admin_api_document_delete(document_id: int, request: Request):
+    """Delete a document and re-sync its course so its chunks go with it."""
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.content_store import delete_document
+    from services.course_ingest import resync_course
+
+    slug = delete_document(document_id)
+    if slug is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    try:
+        report = resync_course(slug)
+    except Exception:
+        logger.exception("event=admin_document_delete_resync_failed slug=%s", slug)
+        report = {"error": "the document was deleted but the search index could not be updated"}
+    logger.info("event=admin_document_deleted id=%d slug=%s", document_id, slug)
+    return {"deleted": True, "slug": slug, **report}
+
+
+@app.post("/admin/api/courses/{slug}/reindex")
+def admin_api_course_reindex(slug: str, request: Request):
+    """Re-chunk and re-embed a course from its stored text, without re-uploading anything."""
+    require_auth(request, api=True)
+    _require_db_content_source()
+    from services.course_ingest import resync_course
+
+    try:
+        return {"slug": slug, **resync_course(slug)}
+    except Exception as error:
+        logger.exception("event=admin_course_reindex_failed slug=%s", slug)
+        raise HTTPException(status_code=502, detail=f"reindex failed: {error}") from error
 
 
 @app.get("/admin/api/knowledge")
@@ -2716,6 +2943,36 @@ def _event_worker_loop() -> None:
             _queue_wakeup.clear()
 
 
+# --- Document ingestion: OCR + embedding off the request thread ---
+
+
+def _ingest_worker_loop() -> None:
+    """Drain uploaded documents one at a time.
+
+    Extraction and embedding are slow (OCR especially), so an upload only enqueues; this thread
+    does the work. It sleeps until woken by an upload, and re-checks periodically so documents
+    stranded by a crash or redeploy get picked back up.
+    """
+    from services.content_store import requeue_stale_documents
+    from services.course_ingest import process_next_document
+
+    while not _ingest_shutdown.is_set():
+        worked = False
+        try:
+            worked = process_next_document()
+        except Exception:
+            logger.exception("event=ingest_worker_loop_error")
+        if not worked:
+            _ingest_wakeup.wait(timeout=30.0)
+            _ingest_wakeup.clear()
+            try:
+                requeued = requeue_stale_documents()
+                if requeued:
+                    logger.warning("event=ingest_requeued_stale count=%d", requeued)
+            except Exception:
+                logger.exception("event=ingest_requeue_failed")
+
+
 # --- Lead sync: pick up new rows in the leads source without a manual import ---
 
 
@@ -2774,6 +3031,12 @@ def _start_event_worker() -> None:
     # customer reply isn't blocked on embedding-model load + encoding.
     threading.Thread(target=_warmup_rag, daemon=True).start()
 
+    global _ingest_worker
+    if not (_ingest_worker and _ingest_worker.is_alive()):
+        _ingest_shutdown.clear()
+        _ingest_worker = threading.Thread(target=_ingest_worker_loop, daemon=True)
+        _ingest_worker.start()
+
     interval = _lead_sync_interval_seconds()
     if interval and not (_lead_sync_worker and _lead_sync_worker.is_alive()):
         _lead_sync_shutdown.clear()
@@ -2795,10 +3058,14 @@ def _stop_event_worker() -> None:
     _queue_shutdown.set()
     _queue_wakeup.set()
     _lead_sync_shutdown.set()
+    _ingest_shutdown.set()
+    _ingest_wakeup.set()
     if _queue_worker:
         _queue_worker.join(timeout=5)
     if _lead_sync_worker:
         _lead_sync_worker.join(timeout=5)
+    if _ingest_worker:
+        _ingest_worker.join(timeout=5)
 
 
 @app.post("/webhook/whatsapp")

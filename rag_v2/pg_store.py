@@ -179,9 +179,16 @@ class PostgresVectorStore:
                             embedding = EXCLUDED.embedding
                         """,
                         (
-                            chunk.chunk_id, chunk.document_id, chunk.title, chunk.text,
-                            chunk.source_ref, chunk.ordinal, chunk.course_id, chunk.topic,
-                            meta, _encode_vector(embedding),
+                            chunk.chunk_id,
+                            chunk.document_id,
+                            chunk.title,
+                            chunk.text,
+                            chunk.source_ref,
+                            chunk.ordinal,
+                            chunk.course_id,
+                            chunk.topic,
+                            meta,
+                            _encode_vector(embedding),
                         ),
                     )
                     written += 1
@@ -194,8 +201,15 @@ class PostgresVectorStore:
                         WHERE chunk_id=%s
                         """,
                         (
-                            chunk.document_id, chunk.title, chunk.text, chunk.source_ref,
-                            chunk.ordinal, chunk.course_id, chunk.topic, meta, chunk.chunk_id,
+                            chunk.document_id,
+                            chunk.title,
+                            chunk.text,
+                            chunk.source_ref,
+                            chunk.ordinal,
+                            chunk.course_id,
+                            chunk.topic,
+                            meta,
+                            chunk.chunk_id,
                         ),
                     )
 
@@ -211,6 +225,97 @@ class PostgresVectorStore:
                     "lexical_index": "in_memory_bm25",
                 },
             )
+            connection.commit()
+        return written, max(0, len(before - set(target_ids)))
+
+    def sync_course(
+        self,
+        course_id: str,
+        chunks: Sequence[Chunk],
+        new_embeddings: dict[str, Sequence[float]],
+    ) -> tuple[int, int]:
+        """Replace exactly one course's chunks, leaving every other course untouched.
+
+        `sync()` prunes globally, which is right for a full rebuild but catastrophic here: the
+        dashboard ingests one course at a time, so a global prune would delete every other
+        course's chunks (and the catalog/knowledge chunks, which have course_id IS NULL).
+        The DELETE is therefore scoped by course_id. Passing an empty `chunks` prunes the
+        course entirely — that is how archiving removes a course from retrieval.
+        """
+        metadata = self.metadata()
+        if not metadata:
+            raise IndexCompatibilityError("initialize the index before writing chunks")
+        dimension = int(metadata["dimension"])
+        target_ids = [chunk.chunk_id for chunk in chunks]
+
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT chunk_id FROM rag_chunks WHERE course_id = %s", (course_id,))
+            before = {str(row[0]) for row in cursor.fetchall()}
+
+            if target_ids:
+                cursor.execute(
+                    "DELETE FROM rag_chunks WHERE course_id = %s AND NOT (chunk_id = ANY(%s))",
+                    (course_id, target_ids),
+                )
+            else:
+                cursor.execute("DELETE FROM rag_chunks WHERE course_id = %s", (course_id,))
+
+            written = 0
+            for chunk in chunks:
+                embedding = new_embeddings.get(chunk.chunk_id)
+                meta = json.dumps(chunk.metadata, ensure_ascii=False, sort_keys=True)
+                if embedding is not None:
+                    if len(embedding) != dimension:
+                        raise ValueError(
+                            f"chunk {chunk.chunk_id} has dimension {len(embedding)}; "
+                            f"expected {dimension}"
+                        )
+                    cursor.execute(
+                        """
+                        INSERT INTO rag_chunks(
+                            chunk_id, document_id, title, text, source_ref, ordinal,
+                            course_id, topic, metadata_json, embedding
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (chunk_id) DO UPDATE SET
+                            document_id = EXCLUDED.document_id, title = EXCLUDED.title,
+                            text = EXCLUDED.text, source_ref = EXCLUDED.source_ref,
+                            ordinal = EXCLUDED.ordinal, course_id = EXCLUDED.course_id,
+                            topic = EXCLUDED.topic, metadata_json = EXCLUDED.metadata_json,
+                            embedding = EXCLUDED.embedding
+                        """,
+                        (
+                            chunk.chunk_id,
+                            chunk.document_id,
+                            chunk.title,
+                            chunk.text,
+                            chunk.source_ref,
+                            chunk.ordinal,
+                            chunk.course_id,
+                            chunk.topic,
+                            meta,
+                            _encode_vector(embedding),
+                        ),
+                    )
+                    written += 1
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE rag_chunks SET document_id=%s, title=%s, text=%s, source_ref=%s,
+                            ordinal=%s, course_id=%s, topic=%s, metadata_json=%s
+                        WHERE chunk_id=%s
+                        """,
+                        (
+                            chunk.document_id,
+                            chunk.title,
+                            chunk.text,
+                            chunk.source_ref,
+                            chunk.ordinal,
+                            chunk.course_id,
+                            chunk.topic,
+                            meta,
+                            chunk.chunk_id,
+                        ),
+                    )
             connection.commit()
         return written, max(0, len(before - set(target_ids)))
 
@@ -239,7 +344,8 @@ class PostgresVectorStore:
         where, values = self._where(filters or RetrievalFilter())
         query = (
             "SELECT chunk_id, document_id, title, text, source_ref, ordinal, course_id, "
-            "topic, metadata_json, embedding FROM rag_chunks" + where
+            "topic, metadata_json, embedding FROM rag_chunks"
+            + where
             + " ORDER BY document_id, ordinal"
         )
         with self._connection() as connection, connection.cursor() as cursor:
@@ -247,8 +353,16 @@ class PostgresVectorStore:
             rows = cursor.fetchall()
         for row in rows:
             (
-                chunk_id, document_id, title, text, source_ref, ordinal,
-                course_id, topic, metadata_json, embedding,
+                chunk_id,
+                document_id,
+                title,
+                text,
+                source_ref,
+                ordinal,
+                course_id,
+                topic,
+                metadata_json,
+                embedding,
             ) = row
             meta = metadata_json if isinstance(metadata_json, dict) else json.loads(metadata_json)
             yield (

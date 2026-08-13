@@ -1,0 +1,10 @@
+# System packages for the OCR fallback in services/doc_extract.py.
+#
+# Uploaded course documents are a mix of digital and scanned files. Scanned pages have no text
+# layer, so they are rasterised (poppler-utils, via pdf2image) and read with Tesseract
+# (tesseract-ocr, via pytesseract). Both are OS-level binaries that pip cannot install, hence
+# this file. Without them the app still runs — extraction just degrades to digital PDFs only
+# and scanned uploads fail with a clear "is Tesseract installed?" message.
+
+[phases.setup]
+aptPkgs = ["...", "tesseract-ocr", "tesseract-ocr-eng", "poppler-utils"]

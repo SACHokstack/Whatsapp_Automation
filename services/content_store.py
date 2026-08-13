@@ -18,8 +18,9 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from services.persistence import backend_name
 
@@ -448,6 +449,180 @@ def list_indexed_documents() -> list[dict]:
             or []
         )
     return rows
+
+
+# --- documents --------------------------------------------------------------
+#
+# The `documents` table doubles as the ingestion queue: a row is uploaded as
+# 'pending', a worker claims it into 'extracting' -> 'embedding' -> 'indexed'
+# (or 'failed'), and the dashboard polls the same column for progress. Keeping
+# the queue in the row avoids a second store and makes status trivially visible.
+
+DOCUMENT_COLUMNS = (
+    "id, course_slug, filename, content_type, extraction_method, ingest_status, "
+    "ingest_error, chunk_count, uploaded_at, updated_at"
+)
+_IN_FLIGHT_STATUSES = ("extracting", "embedding")
+
+
+def add_document(course_slug: str, filename: str, content_type: str, raw_bytes: bytes) -> int:
+    """Store an uploaded file and queue it for ingestion. Returns the new document id."""
+    _ensure_schema()
+    now = _utc_now()
+    payload = memoryview(raw_bytes) if _is_postgres() else sqlite3.Binary(raw_bytes)
+    with _get_connection() as conn:
+        if _is_postgres():
+            row = _run(
+                conn,
+                "INSERT INTO documents (course_slug, filename, content_type, raw_bytes, "
+                "ingest_status, uploaded_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?) "
+                "RETURNING id",
+                (course_slug, filename, content_type, payload, now, now),
+                fetch="one",
+            )
+            return int(row["id"])
+        cur = conn.execute(
+            _q(
+                "INSERT INTO documents (course_slug, filename, content_type, raw_bytes, "
+                "ingest_status, uploaded_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)"
+            ),
+            (course_slug, filename, content_type, payload, now, now),
+        )
+        return int(cur.lastrowid)
+
+
+def get_document(document_id: int, *, with_bytes: bool = False) -> dict | None:
+    _ensure_schema()
+    columns = f"{DOCUMENT_COLUMNS}, raw_bytes, extracted_text" if with_bytes else DOCUMENT_COLUMNS
+    with _get_connection() as conn:
+        row = _run(
+            conn, f"SELECT {columns} FROM documents WHERE id = ?", (document_id,), fetch="one"
+        )
+    if row and with_bytes and row.get("raw_bytes") is not None:
+        row["raw_bytes"] = bytes(row["raw_bytes"])
+    return row
+
+
+def list_documents(course_slug: str | None = None) -> list[dict]:
+    """Document rows (never the blobs) for the dashboard, newest first."""
+    _ensure_schema()
+    sql = f"SELECT {DOCUMENT_COLUMNS} FROM documents"
+    params: tuple = ()
+    if course_slug:
+        sql += " WHERE course_slug = ?"
+        params = (course_slug,)
+    sql += " ORDER BY id DESC"
+    with _get_connection() as conn:
+        return _run(conn, sql, params, fetch="all") or []
+
+
+def set_document_status(
+    document_id: int,
+    status: str,
+    *,
+    error: str | None = None,
+    extracted_text: str | None = None,
+    extraction_method: str | None = None,
+    chunk_count: int | None = None,
+) -> None:
+    """Advance a document through the ingest states, recording whatever the step produced."""
+    _ensure_schema()
+    assignments = ["ingest_status = ?", "ingest_error = ?", "updated_at = ?"]
+    params: list = [status, (error or "")[:1000] or None, _utc_now()]
+    if extracted_text is not None:
+        assignments.insert(0, "extracted_text = ?")
+        params.insert(0, extracted_text)
+    if extraction_method is not None:
+        assignments.insert(0, "extraction_method = ?")
+        params.insert(0, extraction_method)
+    if chunk_count is not None:
+        assignments.insert(0, "chunk_count = ?")
+        params.insert(0, int(chunk_count))
+    with _get_connection() as conn:
+        _run(
+            conn,
+            f"UPDATE documents SET {', '.join(assignments)} WHERE id = ?",
+            (*params, document_id),
+        )
+
+
+def claim_pending_document() -> dict | None:
+    """Atomically take the oldest pending document into 'extracting'.
+
+    The conditional UPDATE is the lock: two workers racing for the same row leave exactly one
+    with a rowcount of 1, so a document is never ingested twice.
+    """
+    _ensure_schema()
+    with _get_connection() as conn:
+        candidate = _run(
+            conn,
+            "SELECT id FROM documents WHERE ingest_status = 'pending' ORDER BY id LIMIT 1",
+            fetch="one",
+        )
+        if not candidate:
+            return None
+        document_id = int(candidate["id"])
+        now = _utc_now()
+        sql = _q(
+            "UPDATE documents SET ingest_status = 'extracting', updated_at = ? "
+            "WHERE id = ? AND ingest_status = 'pending'"
+        )
+        if _is_postgres():
+            with conn.cursor() as cur:
+                cur.execute(sql, (now, document_id))
+                claimed = cur.rowcount == 1
+        else:
+            claimed = conn.execute(sql, (now, document_id)).rowcount == 1
+    return get_document(document_id, with_bytes=True) if claimed else None
+
+
+def requeue_stale_documents(older_than_seconds: int = 1800) -> int:
+    """Return documents whose worker died mid-ingest to 'pending'. Returns rows requeued.
+
+    OCR is slow, so the threshold is generous — this only rescues rows abandoned by a crash
+    or a redeploy, never one that is merely taking its time.
+    """
+    _ensure_schema()
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)).isoformat()
+    placeholders = ", ".join("?" for _ in _IN_FLIGHT_STATUSES)
+    sql = _q(
+        f"UPDATE documents SET ingest_status = 'pending', updated_at = ? "
+        f"WHERE ingest_status IN ({placeholders}) AND updated_at < ?"
+    )
+    params = (_utc_now(), *_IN_FLIGHT_STATUSES, cutoff)
+    with _get_connection() as conn:
+        if _is_postgres():
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                return cur.rowcount
+        return conn.execute(sql, params).rowcount
+
+
+def documents_for_course(course_slug: str) -> list[dict]:
+    """Indexed docs of one course with their text — the inputs for a scoped re-ingest."""
+    _ensure_schema()
+    with _get_connection() as conn:
+        return (
+            _run(
+                conn,
+                "SELECT id, course_slug, filename, extracted_text FROM documents "
+                "WHERE course_slug = ? AND ingest_status = 'indexed' ORDER BY id",
+                (course_slug,),
+                fetch="all",
+            )
+            or []
+        )
+
+
+def delete_document(document_id: int) -> str | None:
+    """Delete a document, returning its course slug so the caller can re-sync that course."""
+    _ensure_schema()
+    row = get_document(document_id)
+    if not row:
+        return None
+    with _get_connection() as conn:
+        _run(conn, "DELETE FROM documents WHERE id = ?", (document_id,))
+    return str(row["course_slug"])
 
 
 def get_policies() -> dict | None:

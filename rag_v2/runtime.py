@@ -202,6 +202,7 @@ def _uploaded_documents(active_slugs: set[str]) -> list[CorpusDocument]:
     identical (stable content-hash) chunk_ids. Empty until the dashboard ingests anything."""
     try:
         from services.content_store import list_indexed_documents
+        from services.course_ingest import document_to_corpus
 
         rows = list_indexed_documents()
     except Exception:
@@ -210,23 +211,11 @@ def _uploaded_documents(active_slugs: set[str]) -> list[CorpusDocument]:
 
     docs: list[CorpusDocument] = []
     for row in rows:
-        slug = row.get("course_slug")
-        if slug not in active_slugs:
+        if row.get("course_slug") not in active_slugs:
             continue
-        text = (row.get("extracted_text") or "").strip()
-        if not text:
-            continue
-        docs.append(
-            CorpusDocument(
-                document_id=f"{slug}-upload-{row['id']}",
-                title=f"{slug} uploaded document {row.get('filename', '')}".strip(),
-                text=text,
-                source_ref=f"upload/{row.get('filename', row['id'])}",
-                course_id=slug,
-                topic="course_kb",
-                metadata={"authority": "approved_course_files"},
-            )
-        )
+        document = document_to_corpus(row)
+        if document is not None:
+            docs.append(document)
     return docs
 
 

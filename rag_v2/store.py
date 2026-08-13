@@ -278,6 +278,101 @@ class SQLiteVectorStore:
             connection.commit()
         return len(rows), max(0, len(self.chunk_ids() - target_ids))
 
+    def sync_course(
+        self,
+        course_id: str,
+        chunks: Sequence[Chunk],
+        new_embeddings: dict[str, Sequence[float]],
+    ) -> tuple[int, int]:
+        """Replace exactly one course's chunks, leaving every other course untouched.
+
+        The SQLite twin of `PostgresVectorStore.sync_course`; see that docstring for why the
+        prune must be scoped by course_id rather than global.
+        """
+        metadata = self.metadata()
+        if not metadata:
+            raise IndexCompatibilityError("initialize the index before writing chunks")
+        dimension = int(metadata["dimension"])
+        target_ids = {chunk.chunk_id for chunk in chunks}
+
+        rows = []
+        metadata_rows = []
+        for chunk in chunks:
+            meta = json.dumps(chunk.metadata, ensure_ascii=False, sort_keys=True)
+            metadata_rows.append(
+                (
+                    chunk.document_id,
+                    chunk.title,
+                    chunk.text,
+                    chunk.source_ref,
+                    chunk.ordinal,
+                    chunk.course_id,
+                    chunk.topic,
+                    meta,
+                    chunk.chunk_id,
+                )
+            )
+            embedding = new_embeddings.get(chunk.chunk_id)
+            if embedding is None:
+                continue
+            if len(embedding) != dimension:
+                raise ValueError(
+                    f"chunk {chunk.chunk_id} has dimension {len(embedding)}; expected {dimension}"
+                )
+            rows.append(
+                (
+                    chunk.chunk_id,
+                    chunk.document_id,
+                    chunk.title,
+                    chunk.text,
+                    chunk.source_ref,
+                    chunk.ordinal,
+                    chunk.course_id,
+                    chunk.topic,
+                    meta,
+                    _encode_vector(embedding),
+                )
+            )
+
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            before = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT chunk_id FROM chunks WHERE course_id = ?", (course_id,)
+                ).fetchall()
+            }
+            if target_ids:
+                placeholders = ",".join("?" for _ in target_ids)
+                connection.execute(
+                    f"DELETE FROM chunks WHERE course_id = ? AND chunk_id NOT IN ({placeholders})",
+                    (course_id, *target_ids),
+                )
+            else:
+                connection.execute("DELETE FROM chunks WHERE course_id = ?", (course_id,))
+            if rows:
+                connection.executemany(
+                    """
+                    INSERT OR REPLACE INTO chunks(
+                        chunk_id, document_id, title, text, source_ref, ordinal,
+                        course_id, topic, metadata_json, embedding
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+            if metadata_rows:
+                connection.executemany(
+                    """
+                    UPDATE chunks
+                    SET document_id = ?, title = ?, text = ?, source_ref = ?, ordinal = ?,
+                        course_id = ?, topic = ?, metadata_json = ?
+                    WHERE chunk_id = ?
+                    """,
+                    metadata_rows,
+                )
+            connection.commit()
+        return len(rows), max(0, len(before - target_ids))
+
     def _where(self, filters: RetrievalFilter) -> tuple[str, list[str]]:
         clauses: list[str] = []
         values: list[str] = []

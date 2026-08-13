@@ -764,7 +764,34 @@ justify-content:space-between;align-items:center}
 .note{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:.7rem .9rem;
 color:#94a3b8;font-size:.82rem;margin-bottom:1rem}
 a.link{color:#60a5fa}
+textarea{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;
+padding:.6rem;font-size:.85rem;width:100%;font-family:ui-monospace,monospace;line-height:1.5}
+label.f{display:block;margin:.7rem 0 .2rem;color:#94a3b8;font-size:.8rem;
+text-transform:uppercase;letter-spacing:.03em}
+label.f input,label.f textarea,label.f select{width:100%}
+.btn{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:.45rem .9rem;
+cursor:pointer;font-size:.85rem;font-weight:600}
+.btn.ghost{background:transparent;border:1px solid #334155;color:#cbd5e1;font-weight:500}
+.btn.danger{background:#7f1d1d;color:#fecaca}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btns{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem}
+.toast{position:fixed;bottom:1.2rem;left:50%;transform:translateX(-50%) translateY(200%);
+background:#1d3a5f;color:#e2e8f0;padding:.7rem 1.2rem;border-radius:10px;font-size:.87rem;
+transition:transform .2s;z-index:50;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:90vw}
+.toast.show{transform:translateX(-50%)}
+.toast.bad{background:#7f1d1d;color:#fecaca}
+.warn{background:#422006;border:1px solid #854d0e;color:#fcd34d;border-radius:10px;
+padding:.7rem .9rem;font-size:.83rem;margin-bottom:1rem}
+.doc{display:flex;align-items:center;gap:.6rem;padding:.5rem 0;border-bottom:1px solid #1e293b;
+font-size:.85rem}
+.doc .g{flex:1;min-width:0}
+.doc .fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st{font-size:.72rem;padding:.1rem .5rem;border-radius:999px;background:#334155}
+.st.indexed{background:#064e3b;color:#6ee7b7}
+.st.failed{background:#7f1d1d;color:#fca5a5}
+.st.pending,.st.extracting,.st.embedding{background:#1e3a5f;color:#93c5fd}
 </style></head><body>
+<div class="toast" id="toast"></div>
 <header>
 <span class="brand">Timmins Admin</span>
 <nav>
@@ -783,6 +810,18 @@ async function api(path){const r=await fetch(path,{credentials:'same-origin'});
 if(r.status===401){location.href='/admin/login';throw new Error('unauth');}
 if(!r.ok)throw new Error('http '+r.status);return r.json();}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+async function send(path,method,body,isForm){
+ const opts={method:method,credentials:'same-origin'};
+ if(isForm){opts.body=body;}
+ else if(body!==undefined){opts.headers={'Content-Type':'application/json'};opts.body=JSON.stringify(body);}
+ const r=await fetch(path,opts);
+ if(r.status===401){location.href='/admin/login';throw new Error('unauth');}
+ let data={};try{data=await r.json();}catch(e){}
+ if(!r.ok)throw new Error(data.detail||('request failed ('+r.status+')'));
+ return data;}
+function toast(msg,bad){const t=document.getElementById('toast');if(!t)return;
+ t.textContent=msg;t.className='toast show'+(bad?' bad':'');
+ clearTimeout(window._tt);window._tt=setTimeout(()=>{t.className='toast';},4000);}
 __SCRIPT__
 </script></body></html>"""
 
@@ -864,34 +903,136 @@ function closeDrawer(){document.getElementById('drawer').classList.remove('open'
 })().catch(e=>{});"""
 
 _ADMIN_COURSES_BODY = """<h1>Courses</h1>
-<div class="note">Read-only for now. Editing, uploads and archiving arrive in the next update.</div>
-<table><thead><tr><th>Course</th><th>Status</th><th>Dates</th><th>Venue</th><th>Keywords</th></tr></thead>
+<div id="banner"></div>
+<div class="row"><button class="btn" onclick="openCourse(null)">+ Add course</button>
+<span class="muted" id="count"></span></div>
+<table><thead><tr><th>Course</th><th>Status</th><th>Dates</th><th>Venue</th><th>Docs</th></tr></thead>
 <tbody id="rows"><tr><td colspan=5 class="muted">Loading…</td></tr></tbody></table>
 <div class="drawer" id="drawer">
 <div class="dh"><strong id="dName">Course</strong><button class="x" onclick="closeDrawer()">×</button></div>
 <div class="db" id="dBody"></div></div>"""
 
 _ADMIN_COURSES_SCRIPT = """
-function closeDrawer(){document.getElementById('drawer').classList.remove('open');}
-async function openCourse(slug){
- const c=(await api('/admin/api/courses')).courses.find(x=>x.slug===slug);if(!c)return;
- document.getElementById('dName').textContent=c.name;
- const fees=Object.entries(c.fees||{}).map(([k,v])=>`${k}: ${v}`).join('  ·  ')||'—';
- document.getElementById('dBody').innerHTML=
-  `<div class="note">Slug: ${esc(c.slug)}<br>Fees: ${esc(fees)}<br>`+
-  `HRDC deadline: ${esc(c.hrdc_deadline||'—')}<br>Payment deadline: ${esc(c.payment_deadline||'—')}</div>`+
-  `<h2>Overview</h2><pre>${esc(c.overview||'(none)')}</pre>`;
- document.getElementById('drawer').classList.add('open');
-}
-(async()=>{
+let CUR=null, POLL=null, EDITABLE=true;
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');
+ if(POLL){clearInterval(POLL);POLL=null;} CUR=null;}
+
+async function loadList(){
  const d=await api('/admin/api/courses');
+ EDITABLE=d.editable!==false;
+ document.getElementById('banner').innerHTML=EDITABLE?'':
+  `<div class="warn">Editing is disabled: the bot is reading its content from files.
+   Set <b>CONTENT_SOURCE=db</b> to turn on editing.</div>`;
+ document.getElementById('count').textContent=d.courses.length+' course(s)';
  document.getElementById('rows').innerHTML=d.courses.map(c=>
   `<tr onclick="openCourse('${esc(c.slug)}')"><td>${esc(c.name)}</td>
    <td><span class="pill ${c.active?'active':'archived'}">${c.active?'active':'archived'}</span></td>
    <td class="muted">${esc(c.dates||'—')}</td><td class="muted">${esc(c.venue||'—')}</td>
-   <td class="muted">${esc((c.keywords||[]).slice(0,4).join(', '))}</td></tr>`
- ).join('')||'<tr><td colspan=5 class="muted">No courses.</td></tr>';
-})().catch(e=>{});"""
+   <td class="muted">${c.document_count||0}</td></tr>`
+ ).join('')||'<tr><td colspan=5 class="muted">No courses yet.</td></tr>';
+}
+
+async function openCourse(slug){
+ const blank={slug:'',name:'',active:true,dates:'',venue:'',fees:{},hrdc_deadline:'',
+  payment_deadline:'',keywords:[],overview:''};
+ CUR=slug?((await api('/admin/api/courses')).courses.find(x=>x.slug===slug)||blank):blank;
+ document.getElementById('dName').textContent=slug?CUR.name:'New course';
+ const dis=EDITABLE?'':'disabled';
+ document.getElementById('dBody').innerHTML=`
+  <label class="f">Course name<input id="f_name" value="${esc(CUR.name)}" ${dis}></label>
+  <label class="f">Dates<input id="f_dates" value="${esc(CUR.dates||'')}" ${dis}></label>
+  <label class="f">Venue<input id="f_venue" value="${esc(CUR.venue||'')}" ${dis}></label>
+  <label class="f">Fees (JSON)<input id="f_fees" value='${esc(JSON.stringify(CUR.fees||{}))}' ${dis}></label>
+  <label class="f">HRDC deadline<input id="f_hrdc" value="${esc(CUR.hrdc_deadline||'')}" ${dis}></label>
+  <label class="f">Payment deadline<input id="f_pay" value="${esc(CUR.payment_deadline||'')}" ${dis}></label>
+  <label class="f">Keywords (comma separated)
+   <input id="f_kw" value="${esc((CUR.keywords||[]).join(', '))}" ${dis}></label>
+  <label class="f">Overview (Markdown — the bot answers from this)
+   <textarea id="f_ov" rows="14" ${dis}>${esc(CUR.overview||'')}</textarea></label>
+  <div class="btns"><button class="btn" id="save" ${dis}>Save</button>
+   ${slug?`<button class="btn ghost" id="toggle" ${dis}>${CUR.active?'Archive':'Reactivate'}</button>
+   <button class="btn danger" id="del" ${dis}>Delete permanently</button>`:''}</div>
+  ${slug?`<h2>Documents</h2>
+   <div class="note">Upload a PDF, Word file or scan. Scanned pages are read with OCR.
+    The bot can answer from a document once it shows <b>indexed</b>.</div>
+   <input type="file" id="file" ${dis}>
+   <div class="btns"><button class="btn" id="up" ${dis}>Upload</button>
+    <button class="btn ghost" id="reindex" ${dis}>Re-index</button></div>
+   <div id="docs" class="muted" style="margin-top:.8rem">Loading…</div>`:''}`;
+
+ const save=document.getElementById('save');
+ if(save)save.onclick=saveCourse;
+ const t=document.getElementById('toggle'); if(t)t.onclick=toggleActive;
+ const d=document.getElementById('del'); if(d)d.onclick=deleteCourse;
+ const u=document.getElementById('up'); if(u)u.onclick=upload;
+ const r=document.getElementById('reindex'); if(r)r.onclick=reindex;
+ document.getElementById('drawer').classList.add('open');
+ if(slug){loadDocs();if(POLL)clearInterval(POLL);POLL=setInterval(loadDocs,3000);}
+}
+
+function formValues(){
+ return {slug:CUR.slug||undefined,name:document.getElementById('f_name').value,
+  dates:document.getElementById('f_dates').value,venue:document.getElementById('f_venue').value,
+  fees:document.getElementById('f_fees').value,
+  hrdc_deadline:document.getElementById('f_hrdc').value,
+  payment_deadline:document.getElementById('f_pay').value,
+  keywords:document.getElementById('f_kw').value,
+  overview:document.getElementById('f_ov').value};
+}
+async function saveCourse(){
+ try{const r=await send('/admin/api/courses','POST',formValues());
+  toast(r.created?'Course created.':'Course saved.');closeDrawer();await loadList();}
+ catch(e){toast(e.message,true);}
+}
+async function toggleActive(){
+ try{const r=await send('/admin/api/courses/'+CUR.slug+'/active','POST',{active:!CUR.active});
+  toast(r.active?'Course reactivated and re-indexed.':'Course archived — it is no longer searchable.');
+  closeDrawer();await loadList();}
+ catch(e){toast(e.message,true);}
+}
+async function deleteCourse(){
+ if(!confirm('Delete "'+CUR.name+'" permanently? Its documents and search data are erased. '+
+  'Archiving instead keeps everything and is reversible.'))return;
+ try{await send('/admin/api/courses/'+CUR.slug,'DELETE');
+  toast('Course deleted.');closeDrawer();await loadList();}
+ catch(e){toast(e.message,true);}
+}
+async function upload(){
+ const input=document.getElementById('file');
+ if(!input.files.length){toast('Choose a file first.',true);return;}
+ const fd=new FormData();fd.append('file',input.files[0]);
+ const btn=document.getElementById('up');btn.disabled=true;btn.textContent='Uploading…';
+ try{await send('/admin/api/courses/'+CUR.slug+'/documents','POST',fd,true);
+  input.value='';toast('Uploaded. Reading the document now…');await loadDocs();}
+ catch(e){toast(e.message,true);}
+ finally{btn.disabled=false;btn.textContent='Upload';}
+}
+async function reindex(){
+ try{const r=await send('/admin/api/courses/'+CUR.slug+'/reindex','POST');
+  toast('Re-indexed: '+(r.chunks||0)+' chunk(s) from '+(r.documents||0)+' document(s).');}
+ catch(e){toast(e.message,true);}
+}
+async function delDoc(id){
+ if(!confirm('Delete this document? The bot will stop using it.'))return;
+ try{await send('/admin/api/documents/'+id,'DELETE');toast('Document deleted.');await loadDocs();}
+ catch(e){toast(e.message,true);}
+}
+async function loadDocs(){
+ if(!CUR||!CUR.slug)return;
+ try{
+  const d=await api('/admin/api/courses/'+CUR.slug+'/documents');
+  const box=document.getElementById('docs');if(!box)return;
+  box.innerHTML=(d.documents||[]).map(x=>
+   `<div class="doc"><div class="g"><div class="fn">${esc(x.filename)}</div>
+    <div class="muted" style="font-size:.75rem">${esc(x.extraction_method||'')}
+     ${x.chunk_count?esc(x.chunk_count)+' chunks':''}
+     ${x.ingest_error?'· '+esc(x.ingest_error):''}</div></div>
+    <span class="st ${esc(x.ingest_status)}">${esc(x.ingest_status)}</span>
+    <button class="btn ghost" onclick="delDoc(${x.id})">Delete</button></div>`
+  ).join('')||'<div class="muted">No documents yet.</div>';
+ }catch(e){}
+}
+loadList().catch(e=>{});"""
 
 _ADMIN_KNOWLEDGE_BODY = """<h1>Company knowledge</h1>
 <div class="note">Read-only for now. Editing arrives in a later update.</div>
